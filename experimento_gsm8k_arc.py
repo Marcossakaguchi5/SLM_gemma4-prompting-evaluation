@@ -9,7 +9,9 @@ from pathlib import Path
 from datasets import load_dataset
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
-from prompts_central import (
+from configuracao.ambiente import inteiro, texto
+from configuracao.prompts import (
+    PROMPT_VERSION,
     PROMPTS_GFLOW_GSM8K_ARC as PROMPTS_GFLOW_AGENTES,
     PROMPTS_GSM8K_ARC as PROMPTS,
 )
@@ -26,12 +28,13 @@ from util_experimento import (
 # ==========================================
 # 1. CONFIGURACOES E INICIALIZACAO
 # ==========================================
-MODEL_NAME = os.environ.get("SLM_MODEL_NAME", "gemma4:e4b")
-CONCURRENCY_LIMIT = 8
-NUM_AMOSTRAS_POR_DATASET = 100
+MODEL_NAME = texto("SLM_MODEL_NAME", "gemma4:e4b")
+TASK_CONCURRENCY_LIMIT = inteiro("EXPERIMENT_TASK_CONCURRENCY", 16, minimo=1)
+CALL_CONCURRENCY_LIMIT = inteiro("EXPERIMENT_CALL_CONCURRENCY", 4, minimo=1)
+NUM_AMOSTRAS_POR_DATASET = inteiro("EXPERIMENT_NUM_SAMPLES", 100, minimo=1)
 EXPERIMENT_SEED = seed_experimento()
 
-OUTPUT_ROOT = Path("resultados_gsm8k_arc")
+OUTPUT_ROOT = Path(texto("EXPERIMENT_OUTPUT_ROOT", "resultados_gsm8k_arc"))
 OUTPUT_FILE_NAME = "resultados_gsm8k_arc.json"
 PARTIAL_OUTPUT_FILE_NAME = "resultados_gsm8k_arc.parcial.jsonl"
 LOG_FILE_NAME = "experimento_gsm8k_arc.log"
@@ -345,16 +348,18 @@ async def main():
             "modelo": MODEL_NAME,
             "temperature": 0.0,
             "top_p": 0.9,
-            "concurrency_limit": CONCURRENCY_LIMIT,
+            "task_concurrency_limit": TASK_CONCURRENCY_LIMIT,
+            "call_concurrency_limit": CALL_CONCURRENCY_LIMIT,
             "seed": EXPERIMENT_SEED,
             "samples_per_dataset": NUM_AMOSTRAS_POR_DATASET,
+            "prompt_version": PROMPT_VERSION,
         },
         [item["id"] for item in dados],
         {"prompts": PROMPTS, "gflow": PROMPTS_GFLOW_AGENTES},
     )
     monitor = MonitorRecursos().iniciar()
-    sem_tarefas = asyncio.Semaphore(CONCURRENCY_LIMIT)
-    sem_chamadas = asyncio.Semaphore(CONCURRENCY_LIMIT)
+    sem_tarefas = asyncio.Semaphore(TASK_CONCURRENCY_LIMIT)
+    sem_chamadas = asyncio.Semaphore(CALL_CONCURRENCY_LIMIT)
 
     tarefas = []
     logger.info("Iniciando inferencias paralelas no modelo alvo (%s).", MODEL_NAME)

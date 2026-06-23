@@ -1,80 +1,47 @@
 # Execução do experimento
 
-O pipeline não carrega arquivos `.env`. Informe configurações diretamente no ambiente do processo.
-
 ## 1. Dependências
 
-```bash
-python3 -m pip install -r requirements.txt
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-O Ollama deve estar ativo e o modelo alvo deve estar instalado.
+O Ollama deve estar ativo e o modelo definido em `SLM_MODEL_NAME` deve estar instalado localmente.
 
-## 2. Geração
+## 2. Configuração
 
-Os scripts usam concorrência 8 e seed padrão `20260612`.
+Toda a configuração local fica em `.env`; use `.env.example` como referência. Os pontos principais são modelo, tamanho da amostra, seed, seleção de benchmarks e paralelismo. A configuração atual usa 10 perguntas por dataset e salva cada nova rodada em `resultados/rodada_<timestamp>/`.
 
-```bash
-EXPERIMENT_SEED=20260612 SLM_MODEL_NAME=gemma4:e4b python3 experimento_gsm8k_arc.py
-EXPERIMENT_SEED=20260612 SLM_MODEL_NAME=gemma4:e4b python3 experimento_hendrycks_math.py
-EXPERIMENT_SEED=20260612 SLM_MODEL_NAME=gemma4:e4b python3 experimento_truthfulqa.py
+O perfil incluído foi ajustado para Ryzen 7 9800X3D, RX 9070 XT de 16 GB e 32 GB de RAM:
+
+```dotenv
+EXPERIMENT_TASK_CONCURRENCY=16
+EXPERIMENT_CALL_CONCURRENCY=4
+OLLAMA_NUM_PARALLEL=4
 ```
 
-`experimento_math_avancado.py` é uma variante opcional.
+Após alterar qualquer variável `OLLAMA_*`, reinicie o servidor Ollama para que ela tenha efeito. Após encerrar uma instância já ativa, use `.\scripts\iniciar_ollama_com_env.ps1` para iniciá-lo com as variáveis do `.env`. Consulte `documentacao/PIPELINES_EXPERIMENTOS.md` para a explicação do perfil e das variáveis.
 
-## 3. Juiz externo
+## 3. Pipelines
 
-O juiz primário deve ser diferente do modelo avaliado. A auditoria posicional, habilitada por padrão, julga cada instância na ordem inicial e na ordem inversa.
-
-Exemplo com Gemini e segundo juiz em 10% da amostra:
-
-```bash
-GEMINI_API_KEY=... python3 avaliar_llm_judge.py \
-  resultados_gsm8k_arc resultados_hendrycks_math resultados_truthfulqa \
-  --provider gemini \
-  --judge-model MODELO_JUIZ_PRIMARIO \
-  --secondary-provider gemini \
-  --secondary-judge-model MODELO_JUIZ_SECUNDARIO \
-  --secondary-sample-rate 0.10
+```powershell
+python -m pipelines.geracao
+python -m pipelines.avaliacao
+python -m pipelines.graficos
 ```
 
-O veredito oficial de `gflow` considera somente a resposta selecionada por consenso sem gabarito. As três trajetórias são avaliadas separadamente apenas para `Oracle@3`.
+Os scripts usam a mesma execução: a geração cria uma pasta em `PIPELINE_OUTPUT_ROOT`, e os dois pipelines seguintes consomem automaticamente a última execução criada. A geração, a avaliação e os gráficos permanecem separados para que seja possível inspecionar cada etapa.
 
-## 4. Avaliação humana
+Para validar a configuração sem chamar modelos ou baixar datasets:
 
-```bash
-python3 gerar_amostra_avaliacao_humana.py \
-  resultados_gsm8k_arc resultados_hendrycks_math resultados_truthfulqa \
-  --instancias 40
+```powershell
+python -m pipelines.geracao --dry-run
 ```
 
-Preencha `avaliacao_humana/amostra_avaliacao_humana.csv` sem consultar a chave JSON.
+## 4. Avaliação humana opcional
 
-## 5. Consolidação
-
-```bash
-python3 processar_resultados.py \
-  resultados_gsm8k_arc resultados_hendrycks_math resultados_truthfulqa \
-  --avaliacoes avaliacoes_llm_judge \
-  --avaliacao-humana avaliacao_humana/amostra_avaliacao_humana.csv \
-  --chave-humana avaliacao_humana/chave_avaliacao_humana.json \
-  --bootstrap-iterations 5000
+```powershell
+python gerar_amostra_avaliacao_humana.py <DIRETORIO_DE_RESULTADOS> --instancias 40
 ```
 
-Principais saídas:
-
-- `Exact Match` e `Answer Match`;
-- equivalência simbólica em matemática;
-- Truthfulness e Informativeness;
-- Oracle@3;
-- Win/Tie/Loss e McNemar exato com correção de Holm;
-- intervalo de confiança por bootstrap;
-- Agreement e Cohen's Kappa;
-- Position Bias Rate;
-- Accuracy per Second e Gain per Extra Call.
-
-## 6. Gráficos
-
-```bash
-python3 gerar_graficos_resultados.py analises_resultados/rodada_YYYYMMDD_HHMMSS
-```
+Depois de preencher o CSV, informe `HUMAN_EVALUATION_CSV` e `HUMAN_EVALUATION_KEY` no `.env` antes de executar `python -m pipelines.graficos`.

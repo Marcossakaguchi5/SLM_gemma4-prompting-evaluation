@@ -36,7 +36,7 @@ Levantamento baseado em `artigo_sbc_reformatado_v3_expandido.tex` e verificaçã
 | RNF03 | Manter auditabilidade e recuperação parcial em execuções longas. | Atendido | JSONL gravado item a item, JSON consolidado e logs por rodada. |
 | RNF04 | Separar geração, julgamento, análise e gráficos em módulos e pastas. | Atendido | Organização dos scripts e diretórios de saída. |
 | RNF05 | Usar um juiz separado e preferencialmente mais forte que o SLM alvo. | Atendido com configuração externa | `--judge-model`/`JUDGE_MODEL_NAME` é obrigatório; o mesmo modelo Ollama é bloqueado por padrão. |
-| RNF06 | Não acessar arquivo `.env`. | Atendido | Não há carregamento de dotenv; as configurações são lidas apenas do ambiente do processo. |
+| RNF06 | Centralizar a configuração local em `.env`, sem versionar segredos. | Atendido | `configuracao_ambiente.py` carrega `.env`; `.gitignore` protege o arquivo local e `.env.example` documenta as chaves. |
 | RNF07 | Registrar reprodutibilidade e recursos de hardware. | Atendido | Manifesto por rodada, hashes de prompts, versões, seed, IDs e monitor de RAM/VRAM. |
 | RNF08 | Padronizar o idioma dos prompts. | Atendido | Prompts executados pelo SLM estão em inglês. |
 

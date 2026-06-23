@@ -5,10 +5,13 @@ import os
 import random
 import time
 import math
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from prompts_central import INSTRUCAO_JULGAMENTO_COMPARATIVO, PROMPT_SISTEMA_JUIZ
+from configuracao.ambiente import texto
+from configuracao.prompts import INSTRUCAO_JULGAMENTO_COMPARATIVO, PROMPT_SISTEMA_JUIZ
 from util_experimento import (
     extrair_resposta_final,
     extrair_telemetria_resposta,
@@ -270,6 +273,61 @@ def chamar_gemini(prompt, modelo):
     return resposta.text, telemetria
 
 
+def chamar_openrouter(prompt, modelo):
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("Defina OPENROUTER_API_KEY no arquivo .env.")
+
+    url = os.environ.get(
+        "OPENROUTER_API_URL",
+        "https://openrouter.ai/api/v1/chat/completions",
+    )
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    app_url = os.environ.get("OPENROUTER_APP_URL")
+    app_title = os.environ.get("OPENROUTER_APP_TITLE")
+    if app_url:
+        headers["HTTP-Referer"] = app_url
+    if app_title:
+        headers["X-Title"] = app_title
+
+    corpo = json.dumps(
+        {
+            "model": modelo,
+            "messages": [
+                {"role": "system", "content": PROMPT_SISTEMA_JUIZ},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.0,
+            "top_p": 0.9,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    requisicao = urllib.request.Request(url, data=corpo, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(requisicao, timeout=120) as resposta:
+            dados = json.loads(resposta.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detalhe = exc.read().decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"OpenRouter retornou HTTP {exc.code}: {detalhe}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Falha de conexao com o OpenRouter: {exc.reason}") from exc
+
+    try:
+        texto = dados["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError("Resposta do OpenRouter nao contem choices[0].message.content.") from exc
+    usage = dados.get("usage") or {}
+    telemetria = {
+        "input_tokens": int(usage.get("prompt_tokens", 0) or 0),
+        "output_tokens": int(usage.get("completion_tokens", 0) or 0),
+        "total_tokens": int(usage.get("total_tokens", 0) or 0),
+    }
+    return texto, telemetria
+
+
 def julgar_grupo(
     grupo,
     provider,
@@ -292,6 +350,8 @@ def julgar_grupo(
     inicio = time.perf_counter()
     if provider == "gemini":
         texto_julgamento, telemetria = chamar_gemini(prompt, judge_model)
+    elif provider == "openrouter":
+        texto_julgamento, telemetria = chamar_openrouter(prompt, judge_model)
     else:
         texto_julgamento, telemetria = chamar_ollama(prompt, judge_model)
     telemetria["wall_duration_seconds"] = round(
@@ -452,10 +512,14 @@ def main():
         description="Avalia resultados experimentais usando LLM-as-a-Judge."
     )
     parser.add_argument("resultados", nargs="+", help="Arquivos JSON ou diretorios de resultados.")
-    parser.add_argument("--provider", choices=("ollama", "gemini"), default="ollama")
+    parser.add_argument(
+        "--provider",
+        choices=("ollama", "gemini", "openrouter"),
+        default=texto("JUDGE_PROVIDER", "ollama"),
+    )
     parser.add_argument(
         "--judge-model",
-        default=os.environ.get("JUDGE_MODEL_NAME"),
+        default=texto("JUDGE_MODEL_NAME"),
         help="Modelo avaliador, preferencialmente mais forte que o SLM alvo.",
     )
     parser.add_argument(
@@ -484,12 +548,12 @@ def main():
     )
     parser.add_argument(
         "--secondary-provider",
-        choices=("ollama", "gemini"),
-        default=os.environ.get("SECONDARY_JUDGE_PROVIDER", "ollama"),
+        choices=("ollama", "gemini", "openrouter"),
+        default=texto("SECONDARY_JUDGE_PROVIDER", "ollama"),
     )
     parser.add_argument(
         "--secondary-judge-model",
-        default=os.environ.get("SECONDARY_JUDGE_MODEL"),
+        default=texto("SECONDARY_JUDGE_MODEL"),
         help="Segundo juiz externo usado em uma amostra para medir concordancia.",
     )
     parser.add_argument(

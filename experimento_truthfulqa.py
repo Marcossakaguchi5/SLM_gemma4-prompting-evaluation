@@ -11,7 +11,9 @@ from pathlib import Path
 from datasets import load_dataset
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
-from prompts_central import (
+from configuracao.ambiente import inteiro, texto
+from configuracao.prompts import (
+    PROMPT_VERSION,
     PROMPTS_GFLOW_TRUTHFULQA as PROMPTS_GFLOW_AGENTES,
     PROMPTS_TRUTHFULQA as PROMPTS,
 )
@@ -28,12 +30,13 @@ from util_experimento import (
 # ==========================================
 # 1. CONFIGURACOES E INICIALIZACAO
 # ==========================================
-MODEL_NAME = os.environ.get("SLM_MODEL_NAME", "gemma4:e4b")  # Tag do seu modelo local no Ollama
-CONCURRENCY_LIMIT = 8      # Ajustado para a maquina de execucao rapida
-NUM_AMOSTRAS = 100         # TruthfulQA tem 817 perguntas na validacao
+MODEL_NAME = texto("SLM_MODEL_NAME", "gemma4:e4b")
+TASK_CONCURRENCY_LIMIT = inteiro("EXPERIMENT_TASK_CONCURRENCY", 16, minimo=1)
+CALL_CONCURRENCY_LIMIT = inteiro("EXPERIMENT_CALL_CONCURRENCY", 4, minimo=1)
+NUM_AMOSTRAS = inteiro("EXPERIMENT_NUM_SAMPLES", 100, minimo=1)  # TruthfulQA tem 817 perguntas na validacao
 EXPERIMENT_SEED = seed_experimento()
 
-OUTPUT_ROOT = Path("resultados_truthfulqa")
+OUTPUT_ROOT = Path(texto("EXPERIMENT_OUTPUT_ROOT", "resultados_truthfulqa"))
 OUTPUT_FILE_NAME = "resultados_truthfulqa.json"
 PARTIAL_OUTPUT_FILE_NAME = "resultados_truthfulqa.parcial.jsonl"
 LOG_FILE_NAME = "experimento_truthfulqa.log"
@@ -418,17 +421,19 @@ async def main():
             "modelo": MODEL_NAME,
             "temperature": 0.0,
             "top_p": 0.9,
-            "concurrency_limit": CONCURRENCY_LIMIT,
+            "task_concurrency_limit": TASK_CONCURRENCY_LIMIT,
+            "call_concurrency_limit": CALL_CONCURRENCY_LIMIT,
             "seed": EXPERIMENT_SEED,
             "samples": NUM_AMOSTRAS,
+            "prompt_version": PROMPT_VERSION,
             "sampling": "stratified_by_category",
         },
         [item["id"] for item in dados],
         {"prompts": PROMPTS, "gflow": PROMPTS_GFLOW_AGENTES},
     )
     monitor = MonitorRecursos().iniciar()
-    sem_tarefas = asyncio.Semaphore(CONCURRENCY_LIMIT)
-    sem_chamadas = asyncio.Semaphore(CONCURRENCY_LIMIT)
+    sem_tarefas = asyncio.Semaphore(TASK_CONCURRENCY_LIMIT)
+    sem_chamadas = asyncio.Semaphore(CALL_CONCURRENCY_LIMIT)
 
     tarefas = []
     for item in dados:

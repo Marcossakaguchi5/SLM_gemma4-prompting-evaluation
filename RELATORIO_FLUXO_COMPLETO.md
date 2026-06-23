@@ -13,7 +13,7 @@ O protocolo principal avalia as mesmas instâncias com quatro abordagens:
 | `for` | Organiza o raciocínio em quatro fases: decomposição, mapeamento de conhecimento, execução e auditoria (*Flow of Reasoning*). |
 | `gflow` | Produz três trajetórias independentes e seleciona uma resposta por consenso, sem consultar o gabarito. |
 
-Os prompts estão centralizados em `prompts_central.py`. Isso mantém as instruções versionáveis e permite alterar uma estratégia sem misturar esse ajuste com a lógica de execução ou avaliação.
+Os prompts estão centralizados em `configuracao/prompts.py`. Isso mantém as instruções versionáveis e permite alterar uma estratégia sem misturar esse ajuste com a lógica de execução ou avaliação.
 
 ## Visão geral
 
