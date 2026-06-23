@@ -9,6 +9,10 @@ from datasets import load_dataset
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from metricas_avaliacao import extrair_resposta_boxed
+from prompts_central import (
+    PROMPTS_GFLOW_MATH_AVANCADO as PROMPTS_GFLOW_AGENTES,
+    PROMPTS_MATH_AVANCADO as PROMPTS,
+)
 from util_experimento import (
     MonitorRecursos,
     amostrar_reprodutivel,
@@ -50,12 +54,6 @@ logger = logging.getLogger("experimento_math_avancado")
 
 # Inicialização com ganância estrita (temperatura 0) para reprodutibilidade científica
 llm = ChatOllama(model=MODEL_NAME, temperature=0.0, top_p=0.9)
-
-FORMATO_RESPOSTA_FINAL = (
-    "\n\nFinish with exactly one line in the following format:\n"
-    "RESPOSTA_FINAL: <resposta final curta>\n"
-    "Do not write anything after that line."
-)
 
 ABORDAGEM_ORDEM = {
     "base": 0,
@@ -105,48 +103,6 @@ def salvar_resultado_parcial(res):
 def salvar_resultados_consolidados(res_lista):
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(res_lista, f, ensure_ascii=False, indent=4)
-
-# ==========================================
-# 2. MAPEAMENTO DOS PROMPTS AVANCADOS
-# ==========================================
-PROMPTS = {
-    "base": (
-        "You are an AI assistant focused on direct and objective answers. Solve the "
-        "problem and provide only the final numerical or conceptual answer, without "
-        f"additional explanation.{FORMATO_RESPOSTA_FINAL}"
-    ),
-    "cot": (
-        "You are a high-fidelity logical inference engine. Build a rigorous and "
-        "self-audited chain of reasoning. For each mathematical claim, make the "
-        "underlying premise and logical connection explicit. "
-        f"Conclude using the required format.{FORMATO_RESPOSTA_FINAL}"
-    ),
-    "gflow": "PIPELINE_GFLOW",
-    "for": (
-        "You are a cognitive agent using Flow of Reasoning. Solve the problem in four "
-        "explicit sequential phases:\n\n"
-        "[PHASE 1: METACOGNITIVE COMPREHENSION]: Decompose the statement, variables, constraints, and goal.\n"
-        "[PHASE 2: AXIOM AND METHOD MAPPING]: Retrieve relevant theorems, formulas, and heuristics.\n"
-        "[PHASE 3: LOGICAL EXECUTION]: Perform the derivation incrementally.\n"
-        "[PHASE 4: FLOW AUDIT]: Check logical consistency and arithmetic, then correct errors.\n\n"
-        f"Present the final result using the required format.{FORMATO_RESPOSTA_FINAL}"
-    ),
-}
-
-PROMPTS_GFLOW_AGENTES = {
-    "caminho_1_formal": (
-        "You are GFlow path 1, a formal solver. Use definitions, equations, explicit "
-        f"constraints, and rigorous deduction.{FORMATO_RESPOSTA_FINAL}"
-    ),
-    "caminho_2_heuristico": (
-        "You are GFlow path 2, a mathematical heuristic solver. Seek patterns, "
-        f"symmetries, substitutions, valid shortcuts, and simplifications.{FORMATO_RESPOSTA_FINAL}"
-    ),
-    "caminho_3_casos": (
-        "You are GFlow path 3, a case and counterexample solver. Enumerate cases, "
-        f"discard impossible branches, test candidates, and check edge conditions.{FORMATO_RESPOSTA_FINAL}"
-    ),
-}
 
 GFLOW_TRAJETORIAS = [
     ("caminho_1_formal", "CAMINHO 1 - FORMAL"),

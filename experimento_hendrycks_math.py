@@ -11,6 +11,10 @@ from pathlib import Path
 from datasets import load_dataset
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
+from prompts_central import (
+    PROMPTS_GFLOW_HENDRYCKS_MATH as PROMPTS_GFLOW_AGENTES,
+    PROMPTS_HENDRYCKS_MATH as PROMPTS,
+)
 from util_experimento import (
     MonitorRecursos,
     amostrar_reprodutivel,
@@ -53,12 +57,6 @@ LOG_FILE = None
 logger = logging.getLogger("experimento_hendrycks_math")
 
 llm = ChatOllama(model=MODEL_NAME, temperature=0.0, top_p=0.9)
-
-FORMATO_RESPOSTA_FINAL = (
-    "\n\nFinish with exactly one line in the following format:\n"
-    "RESPOSTA_FINAL: <resposta final curta>\n"
-    "Do not write anything after that line."
-)
 
 ABORDAGEM_ORDEM = {
     "base": 0,
@@ -127,51 +125,6 @@ def salvar_resultados_consolidados(resultados):
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(ordenar_resultados(resultados), f, ensure_ascii=False, indent=4)
 
-
-# ==========================================
-# 2. PROMPTS COMPARATIVOS: BASE, COT, GFLOW, FOR
-# ==========================================
-PROMPTS = {
-    "base": (
-        "You are a direct mathematical problem-solving assistant. Solve the problem "
-        "and provide only the final answer using the required output format."
-        f"{FORMATO_RESPOSTA_FINAL}"
-    ),
-    "cot": (
-        "You are a careful mathematical reasoning assistant. Solve the problem with "
-        "a concise chain of thought: identify the relevant variables, derive the "
-        "needed equations or cases, compute carefully, and finish with the required "
-        f"final-answer line.{FORMATO_RESPOSTA_FINAL}"
-    ),
-    "gflow": "PIPELINE_GFLOW",
-    "for": (
-        "You are an assistant using Flow of Reasoning (FoR). Solve the problem by "
-        "following these four phases:\n\n"
-        "[PHASE 1: PROBLEM DECOMPOSITION]: Identify variables, restrictions, and the goal.\n"
-        "[PHASE 2: AXIOM AND METHOD MAPPING]: Recall formulas, theorems, or heuristics needed.\n"
-        "[PHASE 3: EXECUTION]: Carry out the algebra, arithmetic, counting, or proof steps.\n"
-        "[PHASE 4: AUDIT]: Check for arithmetic mistakes, invalid cases, or missing constraints.\n\n"
-        f"Then use the required final-answer line.{FORMATO_RESPOSTA_FINAL}"
-    ),
-}
-
-PROMPTS_GFLOW_AGENTES = {
-    "caminho_1_algebrico": (
-        "You are GFlow path 1, a formal algebraic solver. Build a rigorous solution "
-        "with definitions, equations, transformations, and exact symbolic reasoning. "
-        f"End with your proposed answer using the required format.{FORMATO_RESPOSTA_FINAL}"
-    ),
-    "caminho_2_heuristico": (
-        "You are GFlow path 2, a heuristic mathematical solver. Use patterns, "
-        "substitutions, symmetry, case analysis, and simplifications to reduce the "
-        f"problem. End with your proposed answer using the required format.{FORMATO_RESPOSTA_FINAL}"
-    ),
-    "caminho_3_casos": (
-        "You are GFlow path 3, a case-analysis solver. Enumerate possible cases, "
-        "constraints, edge cases, and invalid branches before selecting the answer. "
-        f"End with your proposed answer using the required format.{FORMATO_RESPOSTA_FINAL}"
-    ),
-}
 
 GFLOW_TRAJETORIAS = [
     ("caminho_1_algebrico", "CAMINHO 1 - ALGEBRICO"),

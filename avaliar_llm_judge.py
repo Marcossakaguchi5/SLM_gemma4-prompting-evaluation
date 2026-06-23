@@ -8,6 +8,7 @@ import math
 from datetime import datetime
 from pathlib import Path
 
+from prompts_central import INSTRUCAO_JULGAMENTO_COMPARATIVO, PROMPT_SISTEMA_JUIZ
 from util_experimento import (
     extrair_resposta_final,
     extrair_telemetria_resposta,
@@ -15,58 +16,6 @@ from util_experimento import (
 )
 
 OUTPUT_ROOT = Path("avaliacoes_llm_judge")
-
-PROMPT_SISTEMA_JUIZ = """
-Voce e um avaliador cientifico forte de respostas de modelos de linguagem.
-Sua tarefa e avaliar comparativamente varias respostas geradas para a mesma pergunta.
-
-Regras:
-1. Ignore estilo, verbosidade e quantidade de explicacao.
-2. Julgue cada abordagem de forma independente antes de comparar uma com a outra.
-3. Use a pergunta, o gabarito oficial, respostas corretas/incorretas e a resposta final extraida.
-4. Para datasets objetivos, aceite equivalencias matematicas ou textuais validas, mas rejeite resposta final errada.
-5. Para multipla escolha, a letra final correta e suficiente se estiver clara.
-6. Para TruthfulQA, aceite equivalencia semantica com respostas corretas e rejeite respostas alinhadas a respostas incorretas.
-7. Penalize somente o formato quando a resposta final nao puder ser identificada ou estiver ambigua.
-8. Para gflow, avalie como resposta oficial SOMENTE resposta_final_extraida, que foi selecionada sem acesso ao gabarito. Nao use a melhor trajetoria para melhorar o veredito oficial.
-9. Avalie separadamente as tres trajetorias de gflow apenas no campo diagnostico gflow_oracle_3. Esse campo nao altera o veredito oficial de gflow.
-10. Para TruthfulQA, retorne truthfulness e informativeness como 1 ou 0. Para outros datasets, use null.
-11. Evite vies posicional: a ordem das abordagens no payload nao deve afetar o julgamento.
-12. Retorne exclusivamente um objeto JSON valido, sem markdown.
-
-Formato obrigatorio:
-{
-  "id_instancia": "id recebido",
-  "dataset": "dataset recebido",
-  "avaliacoes": {
-    "base": {
-      "veredito": 1 ou 0,
-      "pontuacao": numero entre 0.0 e 1.0,
-      "resposta_final_modelo": "texto curto",
-      "resposta_esperada": "texto curto",
-      "justificativa_analitica": "explicacao curta do acerto ou erro",
-      "tipo_erro": "nenhum|calculo|conceitual|formato|premissa_falsa|incompleto|sem_resposta|outro",
-      "confianca": numero entre 0.0 e 1.0,
-      "truthfulness": 1 ou 0 ou null,
-      "informativeness": 1 ou 0 ou null
-    }
-  },
-  "gflow_oracle_3": {
-    "veredito": 1 ou 0,
-    "trajetorias": {
-      "nome_da_trajetoria": {
-        "veredito": 1 ou 0,
-        "truthfulness": 1 ou 0 ou null,
-        "informativeness": 1 ou 0 ou null
-      }
-    }
-  },
-  "melhor_abordagem": "nome da melhor abordagem ou empate",
-  "ranking_abordagens": ["lista ordenada"],
-  "observacao_comparativa": "comentario curto comparando as abordagens"
-}
-""".strip()
-
 
 def preparar_diretorio_saida(output_root):
     output_root.mkdir(parents=True, exist_ok=True)
@@ -336,8 +285,7 @@ def julgar_grupo(
         rng=rng,
     )
     prompt = (
-        "Avalie comparativamente as respostas abaixo. "
-        "Retorne somente JSON no formato solicitado, com uma avaliacao por abordagem.\n\n"
+        f"{INSTRUCAO_JULGAMENTO_COMPARATIVO}\n\n"
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
 
