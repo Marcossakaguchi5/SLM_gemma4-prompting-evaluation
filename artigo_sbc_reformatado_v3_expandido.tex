@@ -1,0 +1,729 @@
+\documentclass[12pt]{article}
+
+\usepackage{sbc-template}
+\usepackage{graphicx,url}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{float}
+\usepackage{placeins}
+
+\sloppy
+
+\title{Chain-of-Thought, Flow of Reasoning e Multi-Trajetória no Gemma 4: um Protocolo Experimental de Estratégias de Prompting em SLM Local via LLM-Juiz}
+
+\author{Marcos Hideki Nishida Sakaguchi\inst{1}}
+
+\address{Departamento de Ciências da Computação e Estatística\\
+Universidade Estadual Paulista (UNESP)\\
+Faculdade de Ciências -- Bauru, SP -- Brasil\\
+\email{marcos.sakaguchi@unesp.br}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This paper presents an experimental protocol for comparing prompting strategies in a local Small Language Model executed through Ollama. The protocol evaluates direct answering, Chain-of-Thought, Flow of Reasoning, and a three-trajectory strategy inspired by GFlowNets over GSM8K, ARC-Challenge, Hendrycks MATH/AIME, and TruthfulQA. Answers are standardized with \texttt{RESPOSTA\_FINAL}, stored in auditable JSON/JSONL files, and assessed through deterministic matching, symbolic equivalence, and an external reference-based LLM-as-a-Judge. The protocol also measures Oracle@3, bootstrap confidence intervals, judge position bias, human agreement, and cost-adjusted accuracy.
+\end{abstract}
+
+\begin{resumo}
+Este trabalho apresenta um protocolo experimental para comparar estratégias de prompting em um Small Language Model local executado via Ollama. O protocolo avalia resposta direta, Chain-of-Thought, Flow of Reasoning e uma estratégia multi-trajetória inspirada em GFlowNets nos datasets GSM8K, ARC-Challenge, Hendrycks MATH/AIME e TruthfulQA. As respostas são padronizadas com \texttt{RESPOSTA\_FINAL}, armazenadas em JSON/JSONL auditável e avaliadas por comparação determinística, equivalência simbólica e LLM-juiz externo baseado em referência. O protocolo também mede Oracle@3, intervalos de confiança por bootstrap, viés posicional do juiz, concordância humana e acurácia ajustada pelo custo.
+\end{resumo}
+
+\section{Introdução}
+
+Modelos de linguagem de grande porte consolidaram-se como ferramentas de alto desempenho em geração textual, programação, resolução de problemas e análise semântica. Ainda assim, a adoção desses modelos em contextos educacionais, acadêmicos e institucionais frequentemente esbarra em fatores práticos: custo por requisição, latência de rede, dependência de provedores externos, restrições de privacidade e dificuldade de reprodução exata do ambiente. Em oposição a esse cenário, modelos de linguagem pequenos (SLMs) oferecem uma alternativa operacionalmente interessante, pois podem ser executados localmente, permitem maior controle sobre dados e tornam experimentos mais acessíveis em máquinas de consumo.
+
+Essa vantagem operacional, entretanto, não elimina limitações de qualidade. Em modelos menores, erros de raciocínio tendem a aparecer com maior frequência quando a tarefa exige manter várias informações simultaneamente, decompor um enunciado, executar operações aritméticas, verificar hipóteses ou rejeitar premissas falsas. Assim, uma pergunta central para o uso prático de SLMs não é apenas se eles conseguem gerar texto fluente, mas se estratégias de inferência podem melhorar a confiabilidade das respostas sem alterar os pesos do modelo.
+
+Este trabalho investiga essa questão por meio da comparação de técnicas de raciocínio em tempo de inferência. O termo ``tempo de inferência'' é usado para destacar que as intervenções ocorrem no momento em que o modelo responde: alteram-se prompts, formato de resposta, número de trajetórias e etapa de julgamento externo, mas não se realiza fine-tuning. Essa distinção é importante porque técnicas em tempo de inferência são mais simples de aplicar, reversíveis, baratas e compatíveis com diferentes modelos locais.
+
+A proposta compara quatro famílias de abordagem: resposta direta, Chain-of-Thought (CoT), Flow of Reasoning (FoR) e uma estratégia multi-trajetória inspirada em GFlowNets. A resposta direta funciona como linha de base. CoT introduz passos intermediários. FoR organiza esses passos em fases fixas. A abordagem inspirada em GFlowNets gera três trajetórias alternativas e seleciona uma resposta por consenso determinístico, sem acesso ao gabarito. Um modelo avaliador separado e preferencialmente mais forte julga posteriormente todas as estratégias. Essa separação evita que o juiz transforme as três candidatas de \texttt{gflow} em uma vantagem oracular.
+
+O modelo alvo principal é o \texttt{gemma4:e4b}, executado localmente via Ollama. O protocolo, contudo, foi implementado de modo a permitir a troca do modelo por variável de ambiente, o que torna possível repetir o experimento com outros SLMs. O estudo utiliza datasets variados para evitar uma avaliação estreita: GSM8K representa raciocínio aritmético em linguagem natural, ARC-Challenge representa inferência científica de múltipla escolha, Hendrycks MATH/AIME representa matemática de maior complexidade e TruthfulQA representa veracidade e resistência a mitos ou premissas enganosas.
+
+As perguntas de pesquisa que orientam o trabalho são:
+
+\begin{itemize}
+\item \textbf{QP1}: estratégias de raciocínio estruturado melhoram a correção das respostas de um SLM local em comparação com resposta direta?
+\item \textbf{QP2}: a estratégia multi-trajetória inspirada em GFlowNets oferece ganho suficiente para justificar o aumento de chamadas ao modelo em relação às estratégias de uma única chamada?
+\item \textbf{QP3}: o efeito das estratégias muda conforme o tipo de dataset, por exemplo matemática, ciência escolar ou veracidade factual?
+\item \textbf{QP4}: a padronização da resposta final e a avaliação por LLM-juiz tornam o processo mais auditável e menos dependente de inspeção manual?
+\end{itemize}
+
+As contribuições do trabalho podem ser resumidas em cinco pontos. Primeiro, apresenta-se um protocolo experimental reprodutível para comparar estratégias de inferência em SLMs locais. Segundo, formaliza-se uma adaptação multi-trajetória com seleção por consenso sem gabarito e cálculo separado de \textit{Oracle@3}. Terceiro, implementa-se um LLM-as-a-Judge externo com auditoria por ordem reversa e suporte a um segundo juiz. Quarto, combinam-se métricas determinísticas, equivalência simbólica, Truthfulness e Informativeness. Quinto, organizam-se scripts para geração, avaliação humana cega, consolidação estatística com bootstrap e visualização gráfica.
+
+O fluxo experimental prevê a seleção de 100 instâncias por dataset, execução do modelo sob cada estratégia, padronização da saída no marcador \texttt{RESPOSTA\_FINAL}, persistência em arquivos JSON/JSONL, avaliação por LLM como juiz, consolidação de métricas e geração de gráficos. Este artigo descreve os fundamentos conceituais, a metodologia e o desenvolvimento do pipeline experimental, deixando a análise quantitativa final para etapa posterior. Os resultados quantitativos serão reportados em etapa posterior, após a execução integral do experimento.
+
+\section{Trabalhos Relacionados}
+
+A fundamentação deste trabalho cruza cinco eixos de pesquisa: raciocínio em modelos de linguagem, SLMs e execução local, engenharia de prompts, avaliação automatizada e estratégias multi-trajetória de inferência. A combinação desses eixos é necessária porque a proposta não se limita a testar um modelo; ela testa diferentes modos de conduzir o mesmo modelo diante de tarefas com naturezas distintas.
+
+\subsection{Raciocínio em Modelos de Linguagem}
+
+A capacidade de raciocínio em modelos de linguagem passou a ser investigada de forma mais sistemática com a introdução do Chain-of-Thought prompting por Wei et al. \cite{wei2022}. O princípio do CoT é induzir o modelo a produzir uma sequência de passos intermediários antes de emitir a resposta final. Em vez de responder de modo imediato, o modelo é orientado a decompor o problema, identificar variáveis relevantes, aplicar regras e finalizar com uma conclusão.
+
+Do ponto de vista conceitual, o CoT pode ser entendido como a criação de um espaço textual de trabalho. Esse espaço não é uma memória externa formal, mas uma sequência de tokens em que o modelo torna visíveis partes de sua inferência. Em problemas aritméticos, esse mecanismo pode ajudar a separar interpretação do enunciado e cálculo. Em questões de múltipla escolha, pode auxiliar na eliminação de alternativas. Em perguntas factuais, pode levar o modelo a verificar se a pergunta contém uma premissa enganosa antes de responder.
+
+O CoT, contudo, não garante correção. Modelos de linguagem podem produzir uma explicação convincente para uma resposta errada, fenômeno frequentemente associado à plausibilidade textual. Isso é particularmente relevante em SLMs: como a capacidade paramétrica é menor, cadeias longas podem aumentar a chance de deriva, repetição ou erro intermediário. Assim, uma contribuição importante deste trabalho é tratar CoT como uma variável experimental, e não como uma técnica presumidamente superior.
+
+Trabalhos posteriores propuseram variações de decomposição, como Least-to-Most Prompting \cite{zhou2023}. A ideia geral dessas abordagens é que problemas difíceis podem ser transformados em subproblemas menores. Essa lógica inspira o uso de estruturas mais rígidas, como Flow of Reasoning, e de mecanismos com múltiplas trajetórias, como a estratégia inspirada em GFlowNets usada neste projeto.
+
+\subsection{SLMs e Execução Local}
+
+SLMs são modelos de linguagem projetados para operar com menor demanda computacional. Embora não exista um limite universal, o termo costuma designar modelos com poucos bilhões de parâmetros, adequados a execução em hardware de consumidor ou servidores locais modestos. O interesse por SLMs cresce porque muitas aplicações não exigem necessariamente o maior modelo disponível, mas sim um equilíbrio entre custo, privacidade, latência e qualidade.
+
+O principal desafio está em preservar capacidade de raciocínio. Modelos menores tendem a apresentar menor robustez em tarefas que exigem longo contexto, inferência multi-etapas e autocorreção. Mukherjee et al. \cite{mukherjee2023}, ao discutirem o Orca, mostram que modelos menores podem se beneficiar de traços explicativos produzidos por modelos maiores. Embora esse tipo de abordagem envolva treinamento, ele reforça uma intuição útil: não apenas a resposta final importa, mas também a estrutura do raciocínio.
+
+Ranaldi e Freitas \cite{ranaldi2024} discutem o alinhamento entre modelos grandes e pequenos por meio de raciocínio em cadeia, indicando que SLMs podem se aproximar de comportamentos mais robustos quando recebem instruções adequadas. Benchmarks como ThinkSLM e SLM-Bench \cite{thinkslm2025,slmbench2025} reforçam essa necessidade de avaliação específica: um SLM deve ser medido não apenas por fluência textual, mas por sua capacidade de resolver problemas, verificar fatos, lidar com ambiguidade e manter consistência.
+
+\subsection{Prompting, Fine-tuning e Estruturas de Raciocínio}
+
+É importante distinguir prompting de fine-tuning. Fine-tuning altera os parâmetros do modelo por treinamento adicional; prompting altera apenas a entrada fornecida ao modelo. Este trabalho se concentra em prompting e orquestração de inferência, porque essas técnicas são acessíveis, reproduzíveis e independem de bases de treinamento rotuladas. Em aplicações locais, isso é especialmente útil: o mesmo modelo pode ser testado sob diferentes estratégias sem custos adicionais de treinamento.
+
+O conceito de estrutura de suporte ao raciocínio descreve instruções que organizam o processo de resposta. Uma estrutura desse tipo não resolve o problema por si só, mas impõe uma forma de organização que pode reduzir erros. No CoT, a estrutura é leve: ``pense passo a passo''. No FoR, a estrutura é mais rígida: o modelo deve passar por fases explícitas. Na estratégia multi-trajetória, a estrutura deixa de ser uma única cadeia textual e passa a ser um conjunto de caminhos candidatos, preservados para avaliação externa.
+
+O Flow of Reasoning utilizado neste trabalho divide a resposta em quatro etapas: decomposição do problema, mapeamento de conhecimento, execução e auditoria. Essa divisão busca separar atividades cognitivas que, em uma resposta direta, aparecem misturadas. A auditoria final é especialmente relevante para SLMs, pois força o modelo a revisar formato, contradições e possíveis erros antes de emitir \texttt{RESPOSTA\_FINAL}.
+
+\subsection{GFlowNets como Inspiração de Inferência}
+
+Redes de Fluxo Generativas (GFlowNets) foram originalmente propostas para amostrar objetos compostos com probabilidade proporcional a uma recompensa \cite{bengio2021}. Em termos simplificados, a ideia é explorar múltiplos caminhos possíveis até estados terminais e favorecer aqueles que recebem maior recompensa. Este trabalho não implementa uma GFlowNet treinada; usa esse princípio como inspiração para engenharia de inferência.
+
+Na prática, a estratégia multi-trajetória inspirada em GFlowNets é modelada como três trajetórias independentes de raciocínio. Cada trajetória assume um papel diferente: formal, heurística e contraprova/por casos. As respostas finais normalizadas são comparadas por voto majoritário; quando não há maioria, aplica-se uma prioridade fixa e reprodutível. As três trajetórias permanecem preservadas para auditoria e cálculo de \textit{Oracle@3}.
+
+Essa adaptação é útil porque CoT e FoR continuam dependentes de uma única trajetória textual. Se essa trajetória começa mal, o restante da resposta pode permanecer preso ao erro inicial. Ao gerar três caminhos, o pipeline aumenta diversidade semântica sem elevar demais o número de chamadas. O custo é maior que o das estratégias de uma chamada, mas permanece simples de contabilizar e de comparar.
+
+\subsection{Avaliação Comparativa Externa}
+
+Além de gerar respostas, um protocolo experimental precisa decidir como julgá-las. A decisão metodológica adotada neste trabalho é separar claramente modelo avaliado e modelo avaliador. O SLM local produz respostas sob diferentes estratégias; em seguida, um modelo avaliador configurado separadamente, preferencialmente mais forte, atua como LLM-as-a-Judge, recebendo pergunta, gabarito e todas as respostas concorrentes para aquela mesma instância.
+
+A avaliação comparativa recebe \texttt{base}, \texttt{cot}, \texttt{for} e \texttt{gflow} no mesmo payload. Para medir viés posicional, cada instância é julgada novamente com a ordem das abordagens invertida. Opcionalmente, uma amostra de 10\% é enviada a um segundo modelo avaliador externo. O prompt instrui o juiz a avaliar apenas a resposta selecionada de \texttt{gflow}; as três trajetórias são usadas separadamente para o diagnóstico \textit{Oracle@3}.
+
+\subsection{LLM-as-a-Judge}
+
+A avaliação de respostas abertas é um gargalo metodológico. Em múltipla escolha, a letra correta costuma bastar; em matemática, é necessário extrair uma resposta final e considerar equivalências; em TruthfulQA, respostas corretas podem ser semanticamente equivalentes sem repetir o texto do gabarito. O paradigma LLM-as-a-Judge, discutido por Zheng et al. \cite{zheng2023}, propõe usar um modelo avaliador para julgar respostas produzidas por outro modelo.
+
+Esse paradigma exige cautela. Zhu et al. \cite{zhu2023} destacam vieses como preferência por respostas longas, posição da resposta e estilo textual. Para reduzir esses riscos, este trabalho utiliza avaliação baseada em referência: o juiz recebe pergunta, gabarito oficial, resposta final extraída, resposta completa do modelo e, quando disponível, listas de respostas corretas e incorretas. O juiz deve retornar JSON estruturado com veredito, pontuação, tipo de erro, justificativa e confiança.
+
+No protocolo proposto, a mitigação desses vieses ocorre em cinco níveis. Primeiro, a ordem inicial é embaralhada por seed. Segundo, o julgamento é repetido na ordem inversa para calcular \textit{Position Bias Rate}. Terceiro, o prompt instrui o juiz a ignorar estilo e verbosidade. Quarto, uma amostra pode ser reavaliada por um segundo juiz e por avaliação humana cega. Quinto, Agreement e Cohen's Kappa quantificam a concordância entre as fontes de avaliação.
+
+\section{Metodologia}
+
+O objetivo metodológico é comparar estratégias de raciocínio mantendo fixos o modelo alvo, o conjunto de perguntas e os parâmetros globais de geração. A variável independente principal é a estratégia de inferência. A variável dependente principal é a correção da resposta final, avaliada por referência. Métricas secundárias incluem duração média, taxa de erro operacional, delta contra a linha de base, pontuação média do juiz, ranking comparativo e custo relativo das abordagens.
+
+\subsection{Modelo Alvo e Configuração}
+
+O modelo alvo principal é o \texttt{gemma4:e4b}, executado localmente via Ollama e acessado pela biblioteca \texttt{langchain-ollama}. O nome do modelo pode ser alterado pela variável de ambiente \texttt{SLM\_MODEL\_NAME}, permitindo repetir o mesmo protocolo em outros SLMs. A temperatura é fixada em 0.0 e o \texttt{top\_p} em 0.9. A baixa temperatura reduz variação entre execuções e favorece comparação determinística entre estratégias.
+
+A concorrência é limitada a oito tarefas ativas e a oito chamadas simultâneas ao SLM, inclusive durante a execução das três trajetórias de \texttt{gflow}. O valor foi definido para a máquina de execução de alto desempenho, mantendo o controle tanto no nível das tarefas quanto no ponto de invocação do modelo.
+
+\subsection{Datasets}
+
+O protocolo prevê utilizar 100 perguntas por dataset. A seleção é pseudoaleatória e reproduzível por seed. Quando o dataset oferece categorias, tipos ou subconjuntos, a amostragem é estratificada; os índices originais e a seed são persistidos no manifesto da rodada.
+
+\begin{itemize}
+\item \textbf{GSM8K}: problemas matemáticos em linguagem natural, com foco em raciocínio aritmético multi-etapas \cite{cobbe2021}.
+\item \textbf{ARC-Challenge}: perguntas científicas de múltipla escolha, com foco em inferência conceitual e eliminação de alternativas \cite{clark2018}.
+\item \textbf{Hendrycks MATH/AIME}: problemas matemáticos de maior dificuldade, filtrados por nível elevado ou associação com AIME \cite{hendrycks2021}.
+\item \textbf{TruthfulQA}: perguntas que avaliam tendência a reproduzir falsidades, mitos, generalizações indevidas e premissas enganosas \cite{lin2022}.
+\end{itemize}
+
+A diversidade dos datasets é central para a proposta. Uma técnica pode melhorar desempenho em matemática e não ajudar em veracidade; outra pode reduzir alucinação factual, mas aumentar tempo de resposta. Portanto, a comparação por dataset evita conclusões excessivamente gerais.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Caracterização dos datasets utilizados no protocolo experimental.}
+\label{tab:datasets}
+\begin{tabular}{|p{2.6cm}|p{3.1cm}|p{3.3cm}|p{3.4cm}|}
+\hline
+\textbf{Dataset} & \textbf{Tipo de tarefa} & \textbf{Formato da resposta} & \textbf{Motivo da escolha} \\
+\hline
+GSM8K & Problemas aritméticos em linguagem natural & Valor numérico ou expressão curta extraída da solução & Avalia decomposição quantitativa, interpretação textual e cálculo multi-etapas. \\
+\hline
+ARC-Challenge & Questões científicas de múltipla escolha & Letra ou alternativa correta & Avalia inferência conceitual, eliminação de opções e conhecimento escolar. \\
+\hline
+Hendrycks MATH/AIME & Problemas matemáticos avançados & Resposta objetiva, frequentemente em \texttt{\textbackslash boxed\{\}} & Testa robustez em problemas mais longos, simbólicos e com múltiplas restrições. \\
+\hline
+TruthfulQA & Perguntas factuais e adversariais & Resposta curta semanticamente correta & Avalia resistência a mitos, falsas premissas e excesso de confiança. \\
+\hline
+\end{tabular}
+\end{table}
+
+Além da diferença de domínio, os datasets apresentam diferentes dificuldades de avaliação. ARC-Challenge permite comparação direta pela alternativa correta. GSM8K permite extração de resposta numérica, mas pode haver variações de formato. Hendrycks MATH exige cuidado com equivalência simbólica e notação matemática. TruthfulQA exige julgamento semântico, pois a resposta correta pode ser expressa em palavras diferentes do gabarito. Essa heterogeneidade justifica a presença do LLM-juiz como etapa comum de avaliação.
+
+\subsection{Estratégias de Inferência}
+
+A estratégia \texttt{base} solicita resposta direta e funciona como linha de base. Ela mede a capacidade do modelo sem estrutura explícita de raciocínio.
+
+A estratégia \texttt{cot} solicita raciocínio passo a passo. O modelo pode explicar a cadeia de inferência antes de emitir a linha \texttt{RESPOSTA\_FINAL}. Essa abordagem testa se a explicitação textual melhora a resposta.
+
+A estratégia \texttt{for} aplica Flow of Reasoning. A resposta passa por quatro fases: decomposição, mapeamento de conhecimento, execução e auditoria. Essa estrutura testa se um fluxo fixo reduz erros em relação ao CoT livre.
+
+A estratégia \texttt{gflow} usa três trajetórias. Cada trajetória gera uma solução candidata com um papel específico: formal, heurístico ou contraprova/por casos. A resposta oficial é escolhida sem gabarito por maioria das respostas normalizadas; empates são resolvidos por prioridade determinística. O LLM-juiz externo avalia somente essa resposta oficial. A métrica \textit{Oracle@3} mede separadamente se ao menos uma das três trajetórias estava correta.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Taxonomia das estratégias de inferência avaliadas.}
+\label{tab:estrategias}
+\begin{tabular}{|p{2.3cm}|p{2.9cm}|p{2.3cm}|p{2.7cm}|p{2.5cm}|}
+\hline
+\textbf{Estratégia} & \textbf{Ideia central} & \textbf{Chamadas ao modelo} & \textbf{Vantagem esperada} & \textbf{Risco principal} \\
+\hline
+\texttt{base} & Resposta direta, sem estrutura explícita & 1 & Baixa latência e menor custo & Erros por resposta precipitada \\
+\hline
+\texttt{cot} & Raciocínio passo a passo & 1 & Melhor decomposição do problema & Explicação plausível para resposta errada \\
+\hline
+\texttt{for} & Quatro fases fixas de raciocínio & 1 & Organização e auditoria antes da resposta & Rigidez excessiva ou verbosidade \\
+\hline
+\texttt{gflow} & Três trajetórias sem juiz interno & 3 & Diversidade de caminhos com custo controlado & Divergência entre trajetórias ou resposta final ambígua \\
+\hline
+\end{tabular}
+\end{table}
+
+Essa taxonomia mostra que as estratégias não competem apenas em acurácia. Elas também diferem em custo operacional, interpretabilidade e robustez. Uma abordagem de baixa latência pode ser adequada para aplicações interativas, enquanto uma abordagem multi-trajetória pode ser mais apropriada para tarefas offline ou de maior criticidade.
+
+\subsection{Descrição Operacional das Abordagens}
+
+Para tornar a comparação mais clara, esta subseção descreve cada abordagem a partir de seu funcionamento operacional dentro do pipeline. Todas recebem a mesma pergunta e são executadas sobre o mesmo modelo alvo; o que muda é a forma como o raciocínio é induzido, organizado ou ampliado.
+
+\subsubsection{Resposta Direta: \texttt{base}}
+
+A abordagem \texttt{base}, também chamada de linha de base ou \textit{baseline}, solicita que o modelo responda diretamente. O prompt evita explicações longas e pede apenas a resposta final. Essa configuração mede o comportamento do SLM sem qualquer estrutura explícita de raciocínio.
+
+Operacionalmente, o fluxo é simples:
+
+\begin{verbatim}
+Pergunta -> SLM local -> RESPOSTA_FINAL
+\end{verbatim}
+
+A vantagem dessa abordagem é o baixo custo: há apenas uma chamada ao modelo e a resposta tende a ser curta. Ela é útil como referência porque qualquer estratégia mais complexa deve justificar seu custo adicional. A limitação é que o modelo pode responder de modo precipitado, especialmente em problemas que exigem várias etapas ou verificação de premissas.
+
+\subsubsection{Chain-of-Thought: \texttt{cot}}
+
+A abordagem \texttt{cot} aplica Chain-of-Thought. O modelo é instruído a raciocinar passo a passo antes de emitir a resposta final. Em tarefas matemáticas, isso pode significar identificar quantidades, montar uma equação e calcular. Em múltipla escolha, pode significar avaliar alternativas. Em perguntas factuais, pode significar verificar se há uma premissa falsa.
+
+O fluxo geral é:
+
+\begin{verbatim}
+Pergunta -> raciocinio passo a passo -> RESPOSTA_FINAL
+\end{verbatim}
+
+O CoT busca reduzir erros causados por saltos diretos para a conclusão. Entretanto, ele também pode introduzir um problema conhecido: o modelo pode produzir uma justificativa coerente em aparência, mas incorreta. Por isso, neste trabalho o CoT não é tratado como garantia de melhora, mas como uma estratégia experimental a ser comparada contra a linha de base.
+
+\subsubsection{Flow of Reasoning: \texttt{for}}
+
+A abordagem \texttt{for} usa Flow of Reasoning. Diferentemente do CoT, que deixa o passo a passo relativamente livre, o FoR impõe fases fixas de raciocínio. A versão geral do protocolo utiliza quatro fases: decomposição do problema, mapeamento de conhecimento, execução e auditoria.
+
+O fluxo pode ser representado como:
+
+\begin{verbatim}
+Pergunta
+  -> [FASE 1] Decomposicao do problema
+  -> [FASE 2] Mapeamento de conhecimento
+  -> [FASE 3] Execucao
+  -> [FASE 4] Auditoria
+  -> RESPOSTA_FINAL
+\end{verbatim}
+
+A intenção é separar tarefas cognitivas que, em uma resposta direta, aparecem misturadas. Primeiro o modelo entende o problema; depois recupera conceitos, fórmulas ou restrições; em seguida executa a solução; por fim revisa possíveis erros. Essa última etapa é importante porque força o modelo a verificar contradições, cálculo e formato antes de finalizar.
+
+\subsubsection{Estratégia multi-trajetória inspirada em GFlowNets: \texttt{gflow}}
+
+A abordagem \texttt{gflow} é a versão multi-trajetória do pipeline. Em vez de produzir uma única cadeia de raciocínio, o modelo gera três caminhos independentes. Cada caminho é orientado por um papel diferente. Em problemas matemáticos, os caminhos são formal, heurístico e por casos/contraprova. Em TruthfulQA, os caminhos são adaptados para factual, cético e incerteza calibrada.
+
+O fluxo é:
+
+\begin{verbatim}
+Pergunta
+  -> Caminho 1: formal
+  -> Caminho 2: heuristico
+  -> Caminho 3: contraprova/casos
+  -> trajetorias candidatas registradas
+  -> voto majoritario sem gabarito
+  -> resposta oficial de gflow
+  -> avaliacao comparativa externa
+\end{verbatim}
+
+A abordagem é inspirada em GFlowNets porque explora múltiplas trajetórias candidatas, mas a implementação é feita por prompting e orquestração, não por treinamento de uma GFlowNet real. As trajetórias são registradas em \texttt{rastros\_execucao}; a escolha por consenso não usa pergunta resolvida, referência ou juiz. Assim, o custo do \texttt{gflow} permanece em três chamadas ao SLM por pergunta e sua acurácia oficial não recebe informação privilegiada.
+
+\subsection{Hipóteses por Dataset}
+
+Como os datasets medem capacidades diferentes, não se espera que uma única estratégia domine todas as tarefas. O protocolo foi desenhado para observar interações entre tipo de problema e tipo de estrutura de raciocínio. A hipótese geral é que tarefas aritméticas se beneficiem de decomposição explícita; tarefas de múltipla escolha se beneficiem de eliminação argumentada; tarefas matemáticas avançadas se beneficiem de múltiplas trajetórias; e tarefas de veracidade se beneficiem de fases de auditoria e caminhos céticos.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Hipóteses qualitativas sobre o efeito esperado das estratégias por dataset.}
+\label{tab:hipoteses}
+\begin{tabular}{|p{2.5cm}|p{3.3cm}|p{3.2cm}|p{3.2cm}|}
+\hline
+\textbf{Dataset} & \textbf{Estratégias com maior potencial} & \textbf{Motivo} & \textbf{Risco observado} \\
+\hline
+GSM8K & CoT, FoR, estratégia inspirada em GFlowNets & Problemas exigem extrair quantidades e executar operações sequenciais & Erros aritméticos ou interpretação errada do enunciado \\
+\hline
+ARC-Challenge & CoT, FoR, estratégia inspirada em GFlowNets & A eliminação de alternativas pode se beneficiar de justificativa explícita & Escolha por plausibilidade textual em vez de conceito correto \\
+\hline
+Hendrycks MATH/AIME & FoR, estratégia inspirada em GFlowNets & Problemas longos podem exigir múltiplas tentativas e verificação reversa & Cadeias longas podem derivar ou esquecer restrições \\
+\hline
+TruthfulQA & FoR, estratégia inspirada em GFlowNets & A auditoria de premissas e a postura cética podem reduzir respostas míticas & Respostas excessivamente confiantes ou aceitação de falsa premissa \\
+\hline
+\end{tabular}
+\end{table}
+
+Essas hipóteses também orientam a interpretação posterior. Um ganho de CoT em GSM8K pode indicar que decomposição textual ajudou o cálculo. Um ganho da estratégia inspirada em GFlowNets em MATH/AIME pode indicar que múltiplas trajetórias aumentaram a chance de encontrar um caminho correto. Já um ganho em TruthfulQA pode estar associado à capacidade de detectar armadilhas no enunciado, e não necessariamente a raciocínio matemático.
+
+\subsection{Três Caminhos da Estratégia Inspirada em GFlowNets}
+
+A adaptação inspirada em GFlowNets é uma das partes centrais do protocolo. Ela não tenta reproduzir matematicamente o treinamento de uma GFlowNet, mas importa a intuição de que múltiplas trajetórias aumentam a chance de explorar regiões diferentes do espaço de solução. A resposta oficial é escolhida por consenso sem referência; o juiz recebe os rastros apenas para calcular o teto diagnóstico \textit{Oracle@3}, sem alterar o veredito da resposta escolhida.
+
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\caption{Papéis das três trajetórias na abordagem inspirada em GFlowNets.}
+\label{tab:gflow_caminhos}
+\begin{tabular}{|p{2.5cm}|p{4.1cm}|p{3.1cm}|p{2.8cm}|}
+\hline
+\textbf{Caminho} & \textbf{Função} & \textbf{Tipo de evidência buscada} & \textbf{Falha que tenta reduzir} \\
+\hline
+Formal & Resolver por regras, equações, definições e dedução explícita & Consistência lógica e matemática & Resposta intuitiva sem fundamento \\
+\hline
+Heurístico & Procurar padrões, simplificações, simetrias ou eliminação de casos & Atalhos úteis e interpretação global & Excesso de cálculo ou caminho longo demais \\
+\hline
+Contraprova / Casos & Testar hipóteses, alternativas e condições limite & Evidência contra respostas candidatas & Aceitar primeira resposta plausível \\
+\hline
+\end{tabular}
+\end{table}
+\FloatBarrier
+
+Após a geração desses caminhos, o pipeline registra as três candidatas, extrai suas respostas finais e seleciona a resposta mais frequente. Em caso de três respostas distintas, utiliza a ordem fixa dos papéis como desempate. Posteriormente, cada trajetória é avaliada apenas para determinar \textit{Oracle@3}, isto é, se algum caminho alcançou a referência mesmo quando o consenso falhou.
+
+\subsection{Padronização da Resposta Final}
+
+Todas as estratégias são instruídas a finalizar com a linha:
+
+\[
+\texttt{RESPOSTA\_FINAL: <resposta final curta>}
+\]
+
+Essa padronização tem duas funções. Primeiro, facilita inspeção humana, pois o leitor consegue localizar rapidamente a conclusão do modelo. Segundo, facilita avaliação automatizada, pois o script \texttt{avaliar\_llm\_judge.py} extrai esse trecho antes de enviar o payload ao juiz. O modelo ainda pode raciocinar livremente nas estratégias estruturadas, mas a resposta final fica separada da justificativa.
+
+\subsection{Formulação dos Prompts}
+
+Os prompts foram construídos para manter a mesma tarefa e alterar apenas a forma de conduzir o raciocínio. Todos os prompts executados pelo SLM foram padronizados em inglês, acompanhando o idioma predominante dos datasets; os quadros abaixo apresentam traduções sintéticas para facilitar a leitura do artigo.
+
+\noindent\textbf{Quadro 1. Prompt da linha de base.}
+\begin{verbatim}
+Voce e um assistente de resposta direta. Resolva o problema
+ou responda a questao de multipla escolha. Forneca apenas a
+resposta final no formato:
+RESPOSTA_FINAL: <resposta final curta>
+\end{verbatim}
+
+\noindent\textbf{Quadro 2. Prompt Chain-of-Thought.}
+\begin{verbatim}
+Resolva usando uma cadeia de pensamento concisa: identifique
+os fatos relevantes, calcule ou infira cuidadosamente e finalize
+com a linha:
+RESPOSTA_FINAL: <resposta final curta>
+\end{verbatim}
+
+\noindent\textbf{Quadro 3. Prompt Flow of Reasoning.}
+\begin{verbatim}
+[FASE 1: DECOMPOSICAO DO PROBLEMA]
+[FASE 2: MAPEAMENTO DE CONHECIMENTO]
+[FASE 3: EXECUCAO]
+[FASE 4: AUDITORIA]
+RESPOSTA_FINAL: <resposta final curta>
+\end{verbatim}
+
+\noindent\textbf{Quadro 4. Prompt da estratégia inspirada em GFlowNets.}
+\begin{verbatim}
+Gere tres trajetorias independentes: formal, heuristica
+e contraprova/casos. Cada trajetoria deve produzir uma
+resposta candidata no formato:
+RESPOSTA_FINAL: <resposta final curta>
+Selecione por voto majoritario sem consultar o gabarito.
+\end{verbatim}
+
+\noindent\textbf{Quadro 5. Prompt do LLM-juiz comparativo.}
+\begin{verbatim}
+Avalie comparativamente as respostas de base, cot, for e gflow
+para a mesma pergunta. Julgue cada abordagem de forma independente
+antes de ranquear. Compare com o gabarito oficial e aceite
+equivalencia semantica ou numerica quando aplicavel. Ignore estilo
+e verbosidade. Avalie somente a resposta selecionada de gflow;
+use as trajetorias apenas para Oracle@3. Retorne JSON estruturado.
+\end{verbatim}
+
+Os quadros mostram que a principal diferença entre as estratégias é a quantidade de estrutura imposta antes da resposta final. A linha de base minimiza instruções; CoT adiciona explicação livre; FoR adiciona fases; a estratégia inspirada em GFlowNets adiciona diversidade de trajetórias; o juiz externo padroniza a avaliação e produz uma comparação relativa entre métodos.
+
+\subsection{Fluxo Experimental}
+
+O fluxo completo do experimento pode ser resumido como uma sequência de transformação de dados, desde a seleção das perguntas até a geração de tabelas e gráficos. A estrutura geral é apresentada no diagrama textual abaixo:
+
+\begin{verbatim}
+Datasets
+  |-- GSM8K
+  |-- ARC-Challenge
+  |-- Hendrycks MATH/AIME
+  |-- TruthfulQA
+        |
+        v
+Selecao aleatoria reproduzivel de 100 perguntas por dataset
+        |
+        v
+Estrategias de inferencia
+  |-- base
+  |-- cot
+  |-- for
+  |-- gflow (3 trajetorias + consenso sem gabarito)
+        |
+        v
+SLM local via Ollama
+        |
+        v
+Resposta padronizada com RESPOSTA_FINAL
+        |
+        v
+Metricas objetivas + LLM-as-a-Judge externo
+  |-- ordem embaralhada
+  |-- ordem reversa
+  |-- segundo juiz em amostra
+  |-- avaliacao humana cega
+        |
+        v
+Metricas, tabelas e graficos
+\end{verbatim}
+
+Esse fluxo separa geração e avaliação. O modelo alvo produz respostas, mas não decide sua própria correção final. A etapa de LLM-juiz atua posteriormente, recebendo gabarito e todas as respostas geradas para a mesma pergunta. Cada julgamento continua comparativo, mas é repetido com ordem inversa para possibilitar a auditoria de viés posicional.
+
+\subsection{Persistência e Auditoria}
+
+Cada experimento cria uma pasta de rodada com timestamp. Nela são gravados JSON consolidado, JSONL parcial, log textual, manifesto de execução e resumo de recursos. O manifesto registra seed, IDs amostrados, hash dos prompts, versões de bibliotecas, versão do Ollama, plataforma e identificação do modelo quando disponível.
+
+Cada registro contém identificador da instância, índice original, seed, modelo, dataset, abordagem, pergunta, gabarito, resposta gerada, rastros, seleção de \texttt{gflow}, status, duração, número de chamadas, tokens de entrada e saída, duração reportada pelo backend e taxa de tokens por segundo. Um monitor registra ainda picos de RAM do processo, memória do sistema e VRAM quando \texttt{nvidia-smi} está disponível.
+
+\subsection{Avaliação}
+
+A avaliação combina três camadas. A primeira é a extração da resposta final. A segunda usa métricas determinísticas: alternativa exata no ARC, comparação numérica no GSM8K e equivalência simbólica via SymPy no MATH/AIME. A terceira é o LLM-as-a-Judge externo, usado para equivalência semântica, TruthfulQA e casos não resolvidos de forma objetiva.
+
+O juiz recebe um payload comparativo por pergunta, inicialmente em ordem embaralhada por seed e depois em ordem inversa. O conteúdo inclui pergunta, referência, listas corretas/incorretas do TruthfulQA e as respostas das quatro estratégias. Para \texttt{gflow}, o juiz avalia oficialmente apenas a resposta selecionada; os rastros alimentam exclusivamente \textit{Oracle@3}. Uma amostra configurável, por padrão 10\%, pode ser enviada a um segundo juiz externo.
+
+O juiz retorna:
+
+\begin{itemize}
+\item \texttt{veredito}: 1 para correto e 0 para incorreto;
+\item \texttt{pontuacao}: valor contínuo entre 0.0 e 1.0;
+\item \texttt{resposta\_final\_modelo}: resposta extraída do modelo;
+\item \texttt{resposta\_esperada}: referência curta;
+\item \texttt{justificativa\_analitica}: explicação curta do julgamento;
+\item \texttt{tipo\_erro}: categoria como cálculo, conceitual, formato ou premissa falsa;
+\item \texttt{confianca}: confiança do juiz;
+\item \texttt{truthfulness}: correção factual binária em TruthfulQA;
+\item \texttt{informativeness}: utilidade e conteúdo informativo binário em TruthfulQA;
+\item \texttt{gflow\_oracle\_3}: indica se ao menos uma trajetória de \texttt{gflow} está correta;
+\item \texttt{melhor\_abordagem}: método mais forte naquela pergunta, ou empate;
+\item \texttt{ranking\_abordagens}: ordenação relativa das abordagens;
+\item \texttt{observacao\_comparativa}: comentário curto sobre diferenças relevantes.
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.18}
+\caption{Campos do JSON retornado pelo LLM-juiz.}
+\label{tab:json_juiz}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{4.7cm}|>{\raggedright\arraybackslash}p{8.1cm}|}
+\hline
+\textbf{Campo} & \textbf{Função na avaliação} \\
+\hline
+\texttt{veredito} & Variável binária usada para cálculo de acurácia. Assume 1 para correto e 0 para incorreto. \\
+\hline
+\texttt{pontuacao} & Escore contínuo entre 0.0 e 1.0, útil para análises mais graduais quando a resposta é parcialmente adequada. \\
+\hline
+\texttt{resposta\_final\_modelo} & Resposta curta extraída do texto do modelo, usada para auditoria humana. \\
+\hline
+\texttt{resposta\_esperada} & Referência curta derivada do gabarito, quando disponível. \\
+\hline
+\texttt{justificativa\_analitica} & Explicação curta do julgamento, permitindo identificar por que a resposta foi aceita ou rejeitada. \\
+\hline
+\texttt{tipo\_erro} & Categoria de erro usada para análise qualitativa e contagem de falhas recorrentes. \\
+\hline
+\texttt{confianca} & Grau de confiança do juiz no próprio julgamento, útil para inspeção de casos ambíguos. \\
+\hline
+\texttt{truthfulness} e \texttt{informativeness} & Critérios binários específicos para TruthfulQA, separando veracidade de utilidade informativa. \\
+\hline
+\texttt{gflow\_oracle\_3} & Teto diagnóstico que indica se alguma das três trajetórias estava correta, sem alterar a resposta oficial selecionada. \\
+\hline
+\texttt{melhor\_abordagem} & Indica a estratégia com melhor resposta para a instância avaliada, permitindo análise relativa entre métodos. \\
+\hline
+\texttt{ranking\_abordagens} & Lista ordenada das estratégias segundo a qualidade relativa das respostas produzidas para a mesma pergunta. \\
+\hline
+\texttt{observacao\_comparativa} & Comentário sintético do juiz sobre diferenças relevantes entre as abordagens, divergências ou empates. \\
+\hline
+\end{tabular}
+\end{table}
+
+A acurácia é calculada separadamente para cada estratégia \(s\) e dataset \(D\). Ela corresponde à razão entre o número de respostas corretas produzidas por \(s\) em \(D\) e o total de perguntas avaliadas nesse dataset:
+
+\begin{equation}
+Acc(s,D)=
+\frac{\text{número de respostas corretas de }s\text{ em }D}
+{\text{total de perguntas em }D}
+\end{equation}
+
+O ganho em relação à linha de base é calculado pela diferença entre a acurácia da estratégia avaliada e a acurácia da abordagem \texttt{base} no mesmo dataset:
+
+\begin{equation}
+\Delta(s,D)=Acc(s,D)-Acc(base,D)
+\end{equation}
+
+Dessa forma, valores positivos de \(\Delta(s,D)\) indicam melhora em relação à linha de base, enquanto valores negativos indicam desempenho inferior. Como todas as estratégias respondem às mesmas instâncias, a comparação é pareada. O pipeline calcula Win/Tie/Loss, teste exato de McNemar e correção de Holm para comparações múltiplas. Quando há mais de um SLM, todas as chaves preservam o campo \texttt{modelo}.
+
+\subsection{Métricas de Avaliação Robusta}
+
+\textit{Exact Match} exige igualdade após normalização textual. \textit{Answer Match} aceita equivalência adequada ao domínio: letra correta em múltipla escolha, igualdade numérica em GSM8K, equivalência simbólica em MATH/AIME e equivalência semântica julgada externamente em TruthfulQA. A \textit{Symbolic Equivalence} simplifica a diferença entre expressões com SymPy e considera equivalentes aquelas cujo resultado é zero.
+
+Em TruthfulQA, \textit{Truthfulness} mede se a resposta evita afirmações falsas, enquanto \textit{Informativeness} verifica se ela fornece conteúdo útil em vez de apenas recusar ou responder de forma vaga. Para \texttt{gflow}, \textit{Oracle@3} representa a proporção de instâncias em que pelo menos uma trajetória estava correta, funcionando como limite superior da exploração multi-trajetória.
+
+A incerteza da acurácia e do delta pareado é estimada por intervalo de confiança de 95\% via bootstrap com 5000 reamostragens. Agreement e Cohen's Kappa são calculados entre juiz primário e ordem reversa, entre juiz primário e segundo juiz, e entre juiz e avaliação humana. A taxa de divergência entre ordem original e inversa define o \textit{Position Bias Rate}.
+
+Para relacionar qualidade e custo, são calculadas \textit{Accuracy per Second} e \textit{Gain per Extra Call}. A primeira divide a acurácia pelo tempo médio de parede; a segunda divide o ganho sobre a linha de base pelo número adicional de chamadas ao SLM. Como CoT e FoR possuem o mesmo número de chamadas da base, \textit{Gain per Extra Call} é reportado principalmente para \texttt{gflow}.
+
+\subsection{Taxonomia de Erros}
+
+Além do veredito binário, o avaliador registra uma categoria de erro. Essa taxonomia é importante porque duas estratégias podem ter a mesma acurácia, mas falhar por razões diferentes. Uma abordagem pode errar por cálculo, outra por interpretar mal o enunciado, e outra por produzir resposta correta em formato ambíguo.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Categorias de erro registradas pelo avaliador.}
+\label{tab:erros}
+\begin{tabular}{|p{3cm}|p{5.3cm}|p{4.2cm}|}
+\hline
+\textbf{Tipo de erro} & \textbf{Descrição} & \textbf{Exemplo de ocorrência} \\
+\hline
+\texttt{calculo} & Operação aritmética ou algébrica incorreta apesar de método adequado & Soma, fração, potência ou simplificação errada \\
+\hline
+\texttt{conceitual} & Uso incorreto de conceito científico, matemático ou factual & Confundir rotação com translação em ARC-Challenge \\
+\hline
+\texttt{formato} & Resposta correta ou parcialmente correta sem marcador final claro & O modelo explica, mas não emite \texttt{RESPOSTA\_FINAL} \\
+\hline
+\texttt{premissa\_falsa} & Aceitação de uma premissa enganosa do enunciado & Responder a mito popular como se fosse fato \\
+\hline
+\texttt{incompleto} & Resposta não cobre restrição essencial do problema & Ignorar caso limite ou alternativa relevante \\
+\hline
+\texttt{sem\_resposta} & Não há resposta final identificável & Texto termina sem conclusão ou com recusa indevida \\
+\hline
+\texttt{outro} & Falha não enquadrada nas categorias anteriores & Erro operacional, saída corrompida ou julgamento inconclusivo \\
+\hline
+\end{tabular}
+\end{table}
+
+Essa taxonomia também ajuda a interpretar o papel de cada estratégia. Espera-se, por exemplo, que CoT reduza erros de decomposição simples, que FoR reduza erros de organização e auditoria, e que a estratégia inspirada em GFlowNets reduza erros conceituais causados por uma única trajetória ruim. Essas hipóteses podem ser verificadas nas tabelas geradas após a avaliação.
+
+\begin{table}[ht]
+\centering
+\small
+\caption{Relação esperada entre estratégias e tipos de erro mitigados.}
+\label{tab:estrategia_erro}
+\begin{tabular}{|p{2.7cm}|p{4.7cm}|p{4.7cm}|}
+\hline
+\textbf{Estratégia} & \textbf{Erros que tende a reduzir} & \textbf{Erros que pode introduzir} \\
+\hline
+\texttt{base} & Reduz erros de formato por ser curta; reduz custo e exposição a deriva textual & Resposta precipitada, ausência de justificativa e baixa auditabilidade \\
+\hline
+\texttt{cot} & Erros de decomposição simples, esquecimento de etapas intermediárias & Cadeias falsas, excesso de confiança e explicações plausíveis para respostas erradas \\
+\hline
+\texttt{for} & Erros de organização, ausência de auditoria, resposta sem formato padronizado & Respostas longas, repetição e rigidez em tarefas simples \\
+\hline
+\texttt{gflow} & Erros de trajetória única, falhas conceituais isoladas, ausência de contraponto & Divergência entre trajetórias, custo temporal maior e resposta final ambígua \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Custo Computacional e Latência}
+
+O protocolo mede duração de parede, duração reportada pelo backend, tokens de entrada e saída, tokens por segundo, chamadas ao SLM e picos de memória. Essas medidas permitem distinguir uma estratégia lenta por geração extensa de outra limitada por fila, carregamento ou recursos de hardware.
+
+O custo esperado varia conforme a estratégia. A linha de base, CoT e FoR usam uma chamada principal ao SLM. A abordagem \texttt{gflow} exige três chamadas, uma para cada trajetória. Portanto, cada pergunta consome seis chamadas ao SLM. O consenso de \texttt{gflow} é determinístico e não adiciona chamada de modelo.
+
+Na execução integral prevista, com quatro datasets e 100 perguntas por dataset, o orçamento de geração é de 2400 chamadas ao SLM local. A auditoria posicional usa duas chamadas ao juiz externo por instância, totalizando 800 julgamentos. Quando a auditoria por segundo juiz é habilitada em 10\% da amostra, acrescentam-se 40 chamadas, chegando a 840 julgamentos externos.
+
+Os gráficos incluem Answer Match, Exact Match, equivalência simbólica, Truthfulness, Informativeness, Oracle@3, Win/Tie/Loss, Position Bias Rate, Accuracy per Second, Gain per Extra Call e custo temporal versus acurácia.
+
+\section{Desenvolvimento}
+
+O desenvolvimento foi organizado em módulos independentes. Essa separação torna o projeto mais auditável: há scripts para geração de respostas, scripts para julgamento, scripts para processamento e scripts para gráficos. A organização também permite executar novamente uma etapa sem repetir todo o experimento.
+
+\subsection{\texttt{experimento\_gsm8k\_arc.py}}
+
+Este script implementa o pipeline para GSM8K e ARC-Challenge. Ele seleciona 100 instâncias por amostragem pseudoaleatória reprodutível, formata as perguntas e executa as quatro estratégias. Para ARC-Challenge, as alternativas são concatenadas ao enunciado; para GSM8K, a resposta objetiva é extraída após o marcador do dataset.
+
+A estratégia inspirada em GFlowNets armazena três caminhos em \texttt{rastros\_execucao} e registra em \texttt{selecao\_gflow} o voto, a trajetória escolhida e os candidatos normalizados.
+
+\subsection{\texttt{experimento\_hendrycks\_math.py}}
+
+Este script implementa a arena matemática principal. Ele carrega subconjuntos de \texttt{EleutherAI/hendrycks\_math}, filtra questões de nível 5 ou associadas a AIME e realiza amostragem estratificada pelo tipo do problema.
+
+Além das respostas completas, o script tenta extrair \texttt{\textbackslash boxed\{\}} ou \texttt{\textbackslash fbox\{\}} da solução oficial. Esse campo, chamado \texttt{resposta\_boxed}, ajuda a avaliar respostas objetivas e a construir métricas preliminares. O LLM-juiz continua necessário porque equivalências matemáticas podem aparecer em formatos diferentes.
+
+\subsection{\texttt{experimento\_truthfulqa.py}}
+
+Este script adapta o protocolo para TruthfulQA e realiza amostragem estratificada por categoria. Os prompts são desenhados para identificar premissas ocultas, mitos, exageros e perguntas que exigem cautela.
+
+Na estratégia inspirada em GFlowNets, os três caminhos possuem papéis próprios: factual, cético e incerteza calibrada. Isso é coerente com a natureza do dataset, em que uma resposta curta pode ser correta, mas também pode ocultar excesso de confiança.
+
+\subsection{\texttt{experimento\_math\_avancado.py}}
+
+A arena avançada testa prompts mais fortes para os mesmos quatro métodos: \texttt{base}, \texttt{cot}, \texttt{for} e \texttt{gflow}. Nessa versão, \texttt{gflow} também executa três trajetórias separadas, formal, heurística e por casos/contraprova, preservando as candidatas para avaliação externa sem etapa interna de seleção. Trata-se de uma variante opcional sobre o domínio MATH/AIME e, portanto, ela não integra a contagem principal de 400 instâncias do protocolo com quatro datasets.
+
+Essa abordagem representa uma forma controlada de aumentar o orçamento computacional em tempo de inferência. Em vez de usar um modelo maior, o pipeline usa mais exploração de raciocínio no mesmo modelo. Isso permite comparar custo e benefício de raciocínio ampliado mantendo o desenho experimental compacto.
+
+\subsection{\texttt{avaliar\_llm\_judge.py}}
+
+Este script implementa a avaliação por LLM como juiz externo. Ele monta um payload comparativo, executa a ordem embaralhada e sua inversão, calcula avaliações de Truthfulness/Informativeness e produz o diagnóstico Oracle@3. Um segundo juiz pode ser aplicado a uma amostra configurável. O uso do mesmo modelo avaliado é bloqueado por padrão.
+
+O retorno do juiz é salvo em JSON, JSONL e em um arquivo comparativo separado. A versão achatada mantém uma linha por abordagem, compatível com o processamento estatístico; a versão comparativa preserva ranking, melhor abordagem e observação relativa por pergunta. Também é gerado um CSV de resumo, facilitando inspeção rápida. Falhas operacionais ou respostas inválidas do juiz são contabilizadas separadamente e não são convertidas automaticamente em erro do SLM.
+
+\subsection{\texttt{processar\_resultados.py}}
+
+Este script consolida resultados brutos, métricas objetivas, avaliações dos juízes e anotações humanas. Ele calcula as métricas robustas, bootstrap, Win/Tie/Loss, McNemar exato com Holm, Position Bias Rate, Agreement, Cohen's Kappa e eficiência por tempo e chamadas.
+
+Além de métricas por abordagem e dataset, o script também mantém o campo \texttt{modelo}, permitindo comparar diferentes SLMs quando o protocolo é repetido com \texttt{SLM\_MODEL\_NAME}.
+
+\subsection{\texttt{gerar\_graficos\_resultados.py}}
+
+Este script gera figuras das métricas consolidadas em PNG e, quando necessário, SVG. Além dos gráficos gerais, inclui equivalência simbólica, Truthfulness, Informativeness, Oracle@3, Position Bias Rate, Win/Tie/Loss e métricas de eficiência.
+
+\subsection{\texttt{gerar\_amostra\_avaliacao\_humana.py}}
+
+Este script cria uma amostra estratificada e cega para revisão humana. As abordagens são substituídas por códigos, enquanto a chave de correspondência é armazenada em arquivo separado. O avaliador preenche correção e, em TruthfulQA, Truthfulness e Informativeness; posteriormente, o processamento calcula Agreement e Cohen's Kappa contra o juiz externo.
+
+\subsection{Organização das Pastas}
+
+Os resultados são organizados por etapa. As respostas brutas ficam em \texttt{resultados\_gsm8k\_arc}, \texttt{resultados\_hendrycks\_math}, \texttt{resultados\_truthfulqa} e \texttt{resultados\_math\_avancado}. As avaliações ficam em \texttt{avaliacoes\_llm\_judge}. As tabelas ficam em \texttt{analises\_resultados}. Os gráficos ficam em \texttt{graficos\_resultados}. Essa separação reduz confusão entre geração, avaliação e análise.
+
+\FloatBarrier
+\subsection{Formato dos Registros}
+
+Cada resposta produzida pelo SLM é armazenada como um objeto JSON. A padronização do registro facilita processamento automático e auditoria manual. Um registro típico contém:
+
+\begin{quote}
+\small
+\begin{verbatim}
+{
+  "id_instancia": "gsm8k_000",
+  "modelo": "gemma4:e4b",
+  "dataset": "GSM8K",
+  "abordagem": "for",
+  "gabarito_oficial": "...",
+  "resposta_gerada": "... RESPOSTA_FINAL: 42",
+  "rastros_execucao": {},
+  "numero_chamadas_slm": 1,
+  "telemetria": {"input_tokens": 120, "output_tokens": 8},
+  "status": "ok",
+  "duracao_segundos": 12.34
+}
+\end{verbatim}
+\end{quote}
+
+Na abordagem \texttt{gflow}, o campo \texttt{rastros\_execucao} contém as três trajetórias e \texttt{selecao\_gflow} documenta o consenso. O juiz externo não substitui essa escolha.
+
+\section{Ameaças à Validade}
+
+A primeira ameaça à validade está na avaliação. Mesmo com referência, um LLM-juiz pode cometer erros ou favorecer posições. Para mitigar isso, o protocolo combina métricas determinísticas, ordem reversa, segundo juiz em amostra e avaliação humana cega. A concordância é quantificada por Agreement e Cohen's Kappa.
+
+A segunda ameaça está na extração da resposta final. Embora o marcador \texttt{RESPOSTA\_FINAL} reduza ambiguidade, o modelo pode descumprir formato ou incluir texto adicional. Por isso, o avaliador também tenta reconhecer variações como \texttt{Final answer} e usa a última linha como fallback.
+
+A terceira ameaça está na generalização dos resultados. O protocolo prevê 100 perguntas por dataset, ainda limitado diante da diversidade total de tarefas. A amostragem estratificada e os intervalos de confiança por bootstrap reduzem, mas não eliminam, essa limitação.
+
+A quarta ameaça é a contaminação de benchmark. Como GSM8K, ARC-Challenge, MATH e TruthfulQA são datasets públicos, o modelo pode ter visto itens semelhantes durante treinamento. Ainda assim, a comparação relativa entre estratégias permanece útil, pois todas respondem às mesmas instâncias sob o mesmo modelo.
+
+\section{Considerações Finais e Próximos Passos}
+
+A versão anterior deste trabalho concentrou-se na delimitação inicial do tema, incluindo resumo, introdução, motivação e definição geral da proposta. A presente etapa avança nessa construção ao consolidar os trabalhos relacionados, a metodologia e o desenvolvimento do pipeline experimental. Assim, o foco desta entrega não está em afirmar resultados finais, mas em descrever de forma reprodutível como as estratégias serão comparadas, como as respostas serão armazenadas e como o LLM-juiz externo realizará a avaliação comparativa por instância.
+
+Até esta etapa, parte do experimento foi executada para validação do fluxo, da persistência e das métricas. A rodada completa prevista possui 400 instâncias e 2400 chamadas ao SLM local. A auditoria posicional totaliza 800 julgamentos externos, com 40 chamadas adicionais quando o segundo juiz é usado em 10\% da amostra.
+
+A próxima etapa discutirá Answer Match, Exact Match, equivalência simbólica, Truthfulness, Informativeness, Oracle@3, intervalos de confiança, Win/Tie/Loss, concordância entre avaliadores e custo ajustado. Com isso, será possível distinguir ganho real da estratégia multi-trajetória de mera diversidade não aproveitada pelo consenso.
+
+\begin{thebibliography}{99}
+
+\bibitem{wei2022}
+Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., Xia, F., Chi, E., Le, Q. V. and Zhou, D. (2022).
+Chain-of-thought prompting elicits reasoning in large language models.
+In \textit{Advances in Neural Information Processing Systems}, volume 35.
+
+\bibitem{zhou2023}
+Zhou, D., Schärli, N., Hou, L., Wei, J., Scales, N., Wang, X., Schuurmans, D., Cui, C., Bousquet, O., Le, Q. and Chi, E. (2023).
+Least-to-most prompting enables complex reasoning in large language models.
+In \textit{International Conference on Learning Representations}.
+
+\bibitem{mukherjee2023}
+Mukherjee, S., Mitra, A., Jawahar, G., Agarwal, S., Palangi, H. and Awadallah, A. (2023).
+Orca: Progressive learning from complex explanation traces of GPT-4.
+\textit{arXiv preprint arXiv:2306.02707}.
+
+\bibitem{ranaldi2024}
+Ranaldi, L. and Freitas, A. (2024).
+Aligning large and small language models via chain-of-thought reasoning.
+In \textit{Proceedings of the 18th Conference of the European Chapter of the Association for Computational Linguistics}, pages 1812--1827.
+
+\bibitem{thinkslm2025}
+Srivastava, G., Cao, S. and Wang, X. (2025).
+ThinkSLM: Towards reasoning in small language models.
+In \textit{Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing}, pages 32612--32662.
+
+\bibitem{slmbench2025}
+Pham, N. T., Kieu, T., Nguyen, D.-M., Xuan, S. H., Duong-Trung, N. and Le-Phuoc, D. (2025).
+SLM-Bench: A comprehensive benchmark of small language models on environmental impacts--Extended version.
+\textit{arXiv preprint arXiv:2508.15478}.
+
+\bibitem{cobbe2021}
+Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., Hesse, C. and Schulman, J. (2021).
+Training verifiers to solve math word problems.
+\textit{arXiv preprint arXiv:2110.14168}.
+
+\bibitem{clark2018}
+Clark, P., Cowhey, I., Etzioni, O., Khot, T., Sabharwal, A., Schoenick, C. and Tafjord, O. (2018).
+Think you have solved question answering? Try ARC, the AI2 Reasoning Challenge.
+\textit{arXiv preprint arXiv:1803.05457}.
+
+\bibitem{hendrycks2021}
+Hendrycks, D., Burns, C., Kadavath, S., Arora, A., Basart, S., Tang, E., Song, D. and Steinhardt, J. (2021).
+Measuring mathematical problem solving with the MATH dataset.
+\textit{NeurIPS Datasets and Benchmarks}.
+
+\bibitem{lin2022}
+Lin, S., Hilton, J. and Evans, O. (2022).
+TruthfulQA: Measuring how models mimic human falsehoods.
+In \textit{Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics}.
+
+\bibitem{zheng2023}
+Zheng, L., Chiang, W.-L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., Lin, Z., Li, Z., Li, D., Xing, E., Zhang, H., Gonzalez, J. and Stoica, I. (2023).
+Judging LLM-as-a-judge with MT-Bench and Chatbot Arena.
+In \textit{Advances in Neural Information Processing Systems}, volume 36.
+
+\bibitem{zhu2023}
+Zhu, L. et al. (2023).
+JudgeLM: Fine-tuned large language models are scalable judges.
+\textit{arXiv preprint arXiv:2310.17631}.
+
+\bibitem{bengio2021}
+Bengio, E., Jain, M., Korablyov, M., Precup, D. and Bengio, Y. (2021).
+Flow network based generative models for non-iterative diverse candidate generation.
+In \textit{Advances in Neural Information Processing Systems}.
+
+\end{thebibliography}
+
+\end{document}

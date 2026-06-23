@@ -1,0 +1,48 @@
+# Ambientes e caches Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Segredos locais
+.env
+.env.*
+!.env.example
+
+# Saídas reprodutíveis do pipeline experimental
+resultados_gsm8k_arc/
+resultados_hendrycks_math/
+resultados_truthfulqa/
+resultados_math_avancado/
+avaliacoes_llm_judge/
+analises_resultados/
+graficos_resultados/
+avaliacao_humana/
+resultado_nemotron_diffusion.json
+
+# Arquivos auxiliares gerados na compilacao do artigo
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+
+# Arquivos locais de editor e sistema
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,464 @@
+import asyncio
+import json
+import logging
+import os
+import time
+from datetime import datetime
+from pathlib import Path
+
+from datasets import load_dataset
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama import ChatOllama
+from util_experimento import (
+    MonitorRecursos,
+    amostrar_reprodutivel,
+    extrair_telemetria_resposta,
+    salvar_manifesto,
+    seed_experimento,
+    selecionar_trajetoria_consenso,
+    somar_telemetrias,
+)
+
+# ==========================================
+# 1. CONFIGURACOES E INICIALIZACAO
+# ==========================================
+MODEL_NAME = os.environ.get("SLM_MODEL_NAME", "gemma4:e4b")
+CONCURRENCY_LIMIT = 8
+NUM_AMOSTRAS_POR_DATASET = 100
+EXPERIMENT_SEED = seed_experimento()
+
+OUTPUT_ROOT = Path("resultados_gsm8k_arc")
+OUTPUT_FILE_NAME = "resultados_gsm8k_arc.json"
+PARTIAL_OUTPUT_FILE_NAME = "resultados_gsm8k_arc.parcial.jsonl"
+LOG_FILE_NAME = "experimento_gsm8k_arc.log"
+
+RUN_DIR = None
+OUTPUT_FILE = None
+PARTIAL_OUTPUT_FILE = None
+LOG_FILE = None
+
+logger = logging.getLogger("experimento_gsm8k_arc")
+llm = ChatOllama(model=MODEL_NAME, temperature=0.0, top_p=0.9)
+
+FORMATO_RESPOSTA_FINAL = (
+    "\n\nFinish with exactly one line in the following format:\n"
+    "RESPOSTA_FINAL: <resposta final curta>\n"
+    "Do not write anything after that line."
+)
+
+ABORDAGEM_ORDEM = {
+    "base": 0,
+    "cot": 1,
+    "gflow": 2,
+    "for": 3,
+}
+
+
+# ==========================================
+# 2. LOGS E PERSISTENCIA PARCIAL
+# ==========================================
+def preparar_diretorio_rodada():
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = OUTPUT_ROOT / f"rodada_{timestamp}"
+    sufixo = 1
+
+    while run_dir.exists():
+        run_dir = OUTPUT_ROOT / f"rodada_{timestamp}_{sufixo:02d}"
+        sufixo += 1
+
+    run_dir.mkdir()
+    return run_dir
+
+
+def configurar_arquivos_saida():
+    global RUN_DIR, OUTPUT_FILE, PARTIAL_OUTPUT_FILE, LOG_FILE
+
+    RUN_DIR = preparar_diretorio_rodada()
+    OUTPUT_FILE = RUN_DIR / OUTPUT_FILE_NAME
+    PARTIAL_OUTPUT_FILE = RUN_DIR / PARTIAL_OUTPUT_FILE_NAME
+    LOG_FILE = RUN_DIR / LOG_FILE_NAME
+
+
+def configurar_logging():
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    file_handler = logging.FileHandler(LOG_FILE, mode="w", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+
+def texto_para_log(valor):
+    if isinstance(valor, str):
+        return valor
+    return json.dumps(valor, ensure_ascii=False)
+
+
+def salvar_resultado_parcial(resultado):
+    with open(PARTIAL_OUTPUT_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(resultado, ensure_ascii=False) + "\n")
+
+
+def ordenar_resultados(resultados):
+    return sorted(
+        resultados,
+        key=lambda item: (
+            item["id_instancia"],
+            ABORDAGEM_ORDEM.get(item["abordagem"], 999),
+        ),
+    )
+
+
+def salvar_resultados_consolidados(resultados):
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(ordenar_resultados(resultados), f, ensure_ascii=False, indent=4)
+
+
+# ==========================================
+# 3. PROMPTS COMPARATIVOS: BASE, COT, GFLOW, FOR
+# ==========================================
+PROMPTS = {
+    "base": (
+        "You are a direct question-answering assistant. Solve the problem or answer "
+        "the multiple-choice question. Provide only the final answer using the required "
+        f"output format.{FORMATO_RESPOSTA_FINAL}"
+    ),
+    "cot": (
+        "You are a careful reasoning assistant. Solve the problem using a concise "
+        "chain of thought: identify the relevant facts, compute or infer carefully, "
+        f"and finish with the required final-answer line.{FORMATO_RESPOSTA_FINAL}"
+    ),
+    "gflow": "PIPELINE_GFLOW",
+    "for": (
+        "You are an assistant using Flow of Reasoning (FoR). Answer by following "
+        "these four phases:\n\n"
+        "[PHASE 1: PROBLEM DECOMPOSITION]: Identify what is asked and the available data.\n"
+        "[PHASE 2: KNOWLEDGE MAPPING]: Recall formulas, concepts, or rules needed.\n"
+        "[PHASE 3: EXECUTION]: Carry out the calculation, deduction, or option elimination.\n"
+        "[PHASE 4: AUDIT]: Check arithmetic, logic, contradictions, and final format.\n\n"
+        f"Then use the required final-answer line.{FORMATO_RESPOSTA_FINAL}"
+    ),
+}
+
+PROMPTS_GFLOW_AGENTES = {
+    "caminho_1_formal": (
+        "You are GFlow path 1, a formal deductive solver. Build a solution trajectory "
+        "using equations, definitions, evidence, and strict logic. End with your proposed "
+        f"answer using the required format.{FORMATO_RESPOSTA_FINAL}"
+    ),
+    "caminho_2_heuristico": (
+        "You are GFlow path 2, a heuristic solver. Build an alternative trajectory using "
+        "pattern recognition, option elimination, intuition, and simplifying cases. End "
+        f"with your proposed answer using the required format.{FORMATO_RESPOSTA_FINAL}"
+    ),
+    "caminho_3_contraprova": (
+        "You are GFlow path 3, an adversarial verifier. Try to solve the problem by "
+        "testing candidate answers, looking for contradictions, counterexamples, and "
+        "hidden assumptions. End with your proposed answer using the required format."
+        f"{FORMATO_RESPOSTA_FINAL}"
+    ),
+}
+
+GFLOW_TRAJETORIAS = [
+    ("caminho_1_formal", "CAMINHO 1 - FORMAL"),
+    ("caminho_2_heuristico", "CAMINHO 2 - HEURISTICO"),
+    ("caminho_3_contraprova", "CAMINHO 3 - CONTRAPROVA"),
+]
+
+
+# ==========================================
+# 4. CARREGAMENTO DOS DATASETS
+# ==========================================
+def carregar_dados_amostra():
+    logger.info("Carregando subconjuntos dos datasets do HuggingFace...")
+
+    dataset_gsm8k = load_dataset("openai/gsm8k", "main", split="test")
+    selecionados_gsm8k = amostrar_reprodutivel(
+        dataset_gsm8k,
+        NUM_AMOSTRAS_POR_DATASET,
+        EXPERIMENT_SEED,
+    )
+    amostra_gsm8k = [
+        {
+            "id": f"gsm8k_{indice_original:04d}",
+            "indice_original": indice_original,
+            "dataset": "GSM8K",
+            "pergunta": item["question"],
+            "gabarito": item["answer"],
+        }
+        for indice_original, item in selecionados_gsm8k
+    ]
+    logger.info("GSM8K carregado: %s instancias.", len(amostra_gsm8k))
+
+    dataset_arc = load_dataset("allenai/ai2_arc", "ARC-Challenge", split="test")
+    amostra_arc = []
+    selecionados_arc = amostrar_reprodutivel(
+        dataset_arc,
+        NUM_AMOSTRAS_POR_DATASET,
+        EXPERIMENT_SEED + 1,
+    )
+    for indice_original, item in selecionados_arc:
+        opcoes = "\n".join(
+            [
+                f"{label}) {texto}"
+                for label, texto in zip(item["choices"]["label"], item["choices"]["text"])
+            ]
+        )
+        pergunta_formatada = f"{item['question']}\nOptions:\n{opcoes}"
+        amostra_arc.append(
+            {
+                "id": f"arc_{indice_original:04d}",
+                "indice_original": indice_original,
+                "dataset": "ARC-Challenge",
+                "pergunta": pergunta_formatada,
+                "gabarito": item["answerKey"],
+            }
+        )
+    logger.info("ARC-Challenge carregado: %s instancias.", len(amostra_arc))
+
+    return amostra_gsm8k + amostra_arc
+
+
+# ==========================================
+# 5. EXECUCAO DA INFERENCIA
+# ==========================================
+async def executar_trajetoria_gflow(sem_chamadas, chave_prompt, pergunta):
+    chain = (
+        ChatPromptTemplate.from_messages(
+            [
+                ("system", PROMPTS_GFLOW_AGENTES[chave_prompt]),
+                ("human", "{input}"),
+            ]
+        )
+        | llm
+    )
+    async with sem_chamadas:
+        resposta = await chain.ainvoke({"input": pergunta})
+    return chave_prompt, resposta.content, extrair_telemetria_resposta(resposta)
+
+async def executar_gflow(sem_chamadas, pergunta):
+    respostas = await asyncio.gather(
+        *[
+            executar_trajetoria_gflow(sem_chamadas, chave_prompt, pergunta)
+            for chave_prompt, _ in GFLOW_TRAJETORIAS
+        ]
+    )
+    respostas_por_chave = {
+        chave: conteudo for chave, conteudo, _ in respostas
+    }
+    telemetrias_por_chave = {
+        chave: telemetria for chave, _, telemetria in respostas
+    }
+    rastros = {}
+
+    for chave_prompt, _ in GFLOW_TRAJETORIAS:
+        conteudo = respostas_por_chave[chave_prompt]
+        rastros[f"gflow_{chave_prompt}"] = conteudo
+
+    resposta_agregada, selecao = selecionar_trajetoria_consenso(
+        respostas_por_chave,
+        [chave for chave, _ in GFLOW_TRAJETORIAS],
+    )
+    return (
+        resposta_agregada,
+        rastros,
+        selecao,
+        somar_telemetrias(list(telemetrias_por_chave.values())),
+    )
+
+
+async def processar_instancia(
+    sem_tarefas,
+    sem_chamadas,
+    item,
+    abordagem,
+    prompt_sistema,
+):
+    async with sem_tarefas:
+        return await executar_instancia(
+            sem_chamadas,
+            item,
+            abordagem,
+            prompt_sistema,
+        )
+
+
+async def executar_instancia(sem_chamadas, item, abordagem, prompt_sistema):
+    inicio = time.perf_counter()
+    logger.info(
+        "Iniciando inferencia | id=%s | dataset=%s | abordagem=%s",
+        item["id"],
+        item["dataset"],
+        abordagem,
+    )
+
+    try:
+        rastros_execucao = {}
+        selecao_gflow = {}
+        if abordagem == "gflow":
+            output_text, rastros_execucao, selecao_gflow, telemetria = await executar_gflow(
+                sem_chamadas,
+                item["pergunta"],
+            )
+            numero_chamadas = 3
+        else:
+            prompt_template = ChatPromptTemplate.from_messages(
+                [
+                    ("system", prompt_sistema),
+                    ("human", "{input}"),
+                ]
+            )
+            chain = prompt_template | llm
+            async with sem_chamadas:
+                response = await chain.ainvoke({"input": item["pergunta"]})
+            output_text = response.content
+            telemetria = extrair_telemetria_resposta(response)
+            numero_chamadas = 1
+
+        duracao = round(time.perf_counter() - inicio, 2)
+        return {
+            "id_instancia": item["id"],
+            "modelo": MODEL_NAME,
+            "dataset": item["dataset"],
+            "indice_original": item["indice_original"],
+            "seed_amostragem": EXPERIMENT_SEED,
+            "abordagem": abordagem,
+            "ordem_abordagem": ABORDAGEM_ORDEM.get(abordagem),
+            "pergunta": item["pergunta"],
+            "gabarito_oficial": item["gabarito"],
+            "resposta_gerada": output_text,
+            "rastros_execucao": rastros_execucao,
+            "selecao_gflow": selecao_gflow,
+            "numero_chamadas_slm": numero_chamadas,
+            "telemetria": telemetria,
+            "status": "ok",
+            "duracao_segundos": duracao,
+        }
+    except Exception as exc:
+        duracao = round(time.perf_counter() - inicio, 2)
+        logger.exception(
+            "Erro ao processar id=%s | dataset=%s | abordagem=%s",
+            item["id"],
+            item["dataset"],
+            abordagem,
+        )
+        return {
+            "id_instancia": item["id"],
+            "modelo": MODEL_NAME,
+            "dataset": item["dataset"],
+            "indice_original": item["indice_original"],
+            "seed_amostragem": EXPERIMENT_SEED,
+            "abordagem": abordagem,
+            "ordem_abordagem": ABORDAGEM_ORDEM.get(abordagem),
+            "pergunta": item["pergunta"],
+            "gabarito_oficial": item["gabarito"],
+            "resposta_gerada": f"ERRO DE INFERENCIA: {str(exc)}",
+            "rastros_execucao": {},
+            "selecao_gflow": {},
+            "numero_chamadas_slm": 3 if abordagem == "gflow" else 1,
+            "telemetria": {},
+            "status": "erro",
+            "duracao_segundos": duracao,
+        }
+
+
+# ==========================================
+# 6. FUNCAO PRINCIPAL DE ORQUESTRACAO
+# ==========================================
+async def main():
+    configurar_arquivos_saida()
+    configurar_logging()
+    logger.info("Preparando experimento v1 com modelo %s.", MODEL_NAME)
+    logger.info("Diretorio desta rodada: %s", RUN_DIR)
+
+    with open(PARTIAL_OUTPUT_FILE, "w", encoding="utf-8"):
+        pass
+    salvar_resultados_consolidados([])
+    logger.info("Arquivos de saida inicializados: %s e %s.", OUTPUT_FILE, PARTIAL_OUTPUT_FILE)
+
+    dados = carregar_dados_amostra()
+    salvar_manifesto(
+        RUN_DIR,
+        {
+            "modelo": MODEL_NAME,
+            "temperature": 0.0,
+            "top_p": 0.9,
+            "concurrency_limit": CONCURRENCY_LIMIT,
+            "seed": EXPERIMENT_SEED,
+            "samples_per_dataset": NUM_AMOSTRAS_POR_DATASET,
+        },
+        [item["id"] for item in dados],
+        {"prompts": PROMPTS, "gflow": PROMPTS_GFLOW_AGENTES},
+    )
+    monitor = MonitorRecursos().iniciar()
+    sem_tarefas = asyncio.Semaphore(CONCURRENCY_LIMIT)
+    sem_chamadas = asyncio.Semaphore(CONCURRENCY_LIMIT)
+
+    tarefas = []
+    logger.info("Iniciando inferencias paralelas no modelo alvo (%s).", MODEL_NAME)
+
+    for item in dados:
+        for abordagem, prompt_sistema in PROMPTS.items():
+            tarefas.append(
+                processar_instancia(
+                    sem_tarefas,
+                    sem_chamadas,
+                    item,
+                    abordagem,
+                    prompt_sistema,
+                )
+            )
+
+    total_tarefas = len(tarefas)
+    resultados = []
+
+    try:
+        for indice, tarefa in enumerate(asyncio.as_completed(tarefas), start=1):
+            resultado = await tarefa
+            resultados.append(resultado)
+            salvar_resultado_parcial(resultado)
+            salvar_resultados_consolidados(resultados)
+
+            logger.info(
+                (
+                    "Resultado salvo %s/%s | id=%s | dataset=%s | abordagem=%s | "
+                    "status=%s | duracao=%ss\n"
+                    "Gabarito esperado:\n%s\n"
+                    "Resposta do LLM:\n%s"
+                ),
+                indice,
+                total_tarefas,
+                resultado["id_instancia"],
+                resultado["dataset"],
+                resultado["abordagem"],
+                resultado["status"],
+                resultado["duracao_segundos"],
+                texto_para_log(resultado["gabarito_oficial"]),
+                texto_para_log(resultado["resposta_gerada"]),
+            )
+    finally:
+        monitor.finalizar(RUN_DIR / "recursos_execucao.json")
+
+    logger.info("Experimento concluido com sucesso.")
+    logger.info(
+        "Total de execucoes salvas: %s (%s instancias x %s abordagens).",
+        len(resultados),
+        len(dados),
+        len(PROMPTS),
+    )
+    logger.info("JSON consolidado: %s.", OUTPUT_FILE)
+    logger.info("JSONL parcial: %s.", PARTIAL_OUTPUT_FILE)
+    logger.info("Log completo: %s.", LOG_FILE)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
