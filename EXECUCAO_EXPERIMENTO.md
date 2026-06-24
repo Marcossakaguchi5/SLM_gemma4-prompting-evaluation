@@ -26,6 +26,7 @@ Após alterar qualquer variável `OLLAMA_*`, reinicie o servidor Ollama para que
 
 ```powershell
 python -m pipelines.geracao
+python -m pipelines.nemotron  # opcional: executa somente o Nemotron
 python -m pipelines.avaliacao
 python -m pipelines.graficos
 ```

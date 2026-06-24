@@ -12,6 +12,7 @@ from pathlib import Path
 
 from configuracao.ambiente import texto
 from configuracao.prompts import INSTRUCAO_JULGAMENTO_COMPARATIVO, PROMPT_SISTEMA_JUIZ
+from metricas_avaliacao import answer_match_objetivo
 from util_experimento import (
     extrair_resposta_final,
     extrair_telemetria_resposta,
@@ -127,6 +128,21 @@ def agrupar_por_instancia(resultados):
         abordagem = normalizar_abordagem(item.get("abordagem"))
         grupo["itens"][abordagem] = item
     return list(grupos.values())
+
+
+def grupo_precisa_llm_juiz(grupo):
+    """Retém TruthfulQA e respostas objetivas que não puderam ser comparadas por código."""
+    for item in grupo.get("itens", {}).values():
+        dataset = str(item.get("dataset", "")).lower()
+        if "truthful" in dataset:
+            return True
+        if any(nome in dataset for nome in ("gsm8k", "arc", "math")):
+            metrica = answer_match_objetivo(item, item.get("resposta_gerada", ""))
+            if metrica.get("answer_match_objetivo") is None:
+                return True
+        else:
+            return True
+    return False
 
 
 def extrair_gsm8k_objetivo(gabarito):
@@ -541,6 +557,14 @@ def main():
         help="Desativa a segunda avaliacao com a ordem das abordagens invertida.",
     )
     parser.add_argument(
+        "--apenas-fallback-deterministico",
+        action="store_true",
+        help=(
+            "Envia ao juiz somente TruthfulQA e grupos objetivos com ao menos uma "
+            "resposta que não pôde ser avaliada deterministicamente."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=20260612,
@@ -571,6 +595,13 @@ def main():
 
     resultados = carregar_resultados(args.resultados)
     grupos = agrupar_por_instancia(resultados)
+    if args.apenas_fallback_deterministico:
+        total_grupos = len(grupos)
+        grupos = [grupo for grupo in grupos if grupo_precisa_llm_juiz(grupo)]
+        print(
+            "Filtro determinístico: "
+            f"{len(grupos)}/{total_grupos} grupos requerem LLM-juiz."
+        )
     modelos_alvo = {grupo.get("modelo") for grupo in grupos if grupo.get("modelo")}
     if (
         args.provider == "ollama"

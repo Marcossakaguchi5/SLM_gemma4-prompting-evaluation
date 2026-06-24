@@ -3,6 +3,8 @@
 import argparse
 from datetime import datetime
 
+from collections import Counter
+
 from configuracao.ambiente import inteiro, lista, texto
 from configuracao.prompts import PROMPT_VERSION
 from .util import (
@@ -13,6 +15,7 @@ from .util import (
     criar_execucao,
     executar_comando,
     python_do_projeto,
+    salvar_json,
     salvar_execucao_atual,
 )
 
@@ -28,6 +31,75 @@ def obter_experimentos():
             f"{', '.join(sorted(desconhecidos))}."
         )
     return selecionados
+
+
+def salvar_amostras_canonicas(fontes, diretorio, esperado_por_dataset):
+    """Separa perguntas de referencias para reutilizar a mesma amostra em outro modelo."""
+    from experimento_nemotron_diffusion import (
+        extrair_instancias_canonicas,
+        validar_tamanho_amostra,
+    )
+
+    instancias = extrair_instancias_canonicas(fontes)
+    validar_tamanho_amostra(instancias, esperado_por_dataset)
+    pasta_amostras = diretorio / "amostras"
+    pasta_amostras.mkdir(parents=True, exist_ok=True)
+    perguntas_path = pasta_amostras / "perguntas_amostradas.json"
+    referencias_path = pasta_amostras / "referencias_amostradas.json"
+
+    campos_contexto = (
+        "indice_original",
+        "seed_amostragem",
+        "subset",
+        "level",
+        "config",
+        "split",
+        "categoria",
+        "tipo",
+        "fonte",
+    )
+    campos_referencia = (
+        "gabarito_oficial",
+        "gabarito",
+        "resposta_boxed",
+        "respostas_corretas",
+        "respostas_incorretas",
+    )
+    perguntas = []
+    referencias = []
+    for item in instancias:
+        base = {
+            "id_instancia": item["id_instancia"],
+            "dataset": item.get("dataset"),
+        }
+        perguntas.append(
+            {
+                **base,
+                "pergunta": item.get("pergunta"),
+                **{campo: item[campo] for campo in campos_contexto if campo in item},
+            }
+        )
+        referencias.append(
+            {
+                **base,
+                **{
+                    campo: item[campo]
+                    for campo in campos_referencia
+                    if campo in item
+                },
+            }
+        )
+    salvar_json(perguntas_path, perguntas)
+    salvar_json(referencias_path, referencias)
+    return {
+        "status": "concluido",
+        "perguntas": str(perguntas_path),
+        "referencias": str(referencias_path),
+        "total": len(perguntas),
+        "contagem_por_dataset": dict(
+            sorted(Counter(item.get("dataset", "") for item in perguntas).items())
+        ),
+    }
 
 
 def main():
@@ -76,6 +148,7 @@ def main():
         EXPERIMENT_CALL_CONCURRENCY=chamadas,
     )
     try:
+        fontes_amostra = []
         for nome in experimentos:
             output_root = diretorio / "geracao" / nome
             manifesto["experimentos"][nome] = {
@@ -94,9 +167,23 @@ def main():
                 ambiente,
                 args.dry_run,
             )
+            fontes_amostra.append(output_root)
             manifesto["experimentos"][nome]["status"] = "concluido"
             if not args.dry_run:
                 atualizar_manifesto(caminho_manifesto, manifesto)
+
+        if args.dry_run:
+            print(
+                "\nAmostras planejadas: amostras/perguntas_amostradas.json e "
+                "amostras/referencias_amostradas.json"
+            )
+        else:
+            manifesto["amostras"] = salvar_amostras_canonicas(
+                fontes_amostra,
+                diretorio,
+                amostras,
+            )
+            atualizar_manifesto(caminho_manifesto, manifesto)
     except Exception:
         manifesto["status"] = "falhou"
         if not args.dry_run:
@@ -111,7 +198,7 @@ def main():
         print("\nSimulacao concluida; nenhum arquivo foi criado.")
     else:
         print(f"\nGeracao concluida: {diretorio}")
-        print("Proximo passo: python pipeline_avaliacao.py")
+        print("Proximo passo: python -m pipelines.nemotron (opcional) ou python -m pipelines.avaliacao")
 
 
 if __name__ == "__main__":

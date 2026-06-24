@@ -4,6 +4,7 @@ import json
 import random
 from collections import defaultdict
 from datetime import datetime
+from itertools import combinations
 from pathlib import Path
 
 from metricas_avaliacao import (
@@ -120,6 +121,16 @@ def carregar_avaliacoes(caminhos):
     return avaliacoes
 
 
+def carregar_avaliacoes_deterministicas(caminhos):
+    avaliacoes = {}
+    for arquivo in descobrir_jsons(caminhos or []):
+        for item in carregar_lista_json(arquivo):
+            if "veredito_deterministico" not in item:
+                continue
+            avaliacoes[chave_registro(item)] = item
+    return avaliacoes
+
+
 def carregar_avaliacao_humana(csv_path, chave_path):
     if not csv_path:
         return {}
@@ -189,13 +200,29 @@ def escolher_answer_match(item, objetiva, avaliacao):
     return juiz if juiz is not None else objetivo
 
 
-def normalizar_linha(item, avaliacoes, avaliacoes_humanas=None):
+def normalizar_linha(
+    item,
+    avaliacoes,
+    avaliacoes_humanas=None,
+    avaliacoes_deterministicas=None,
+):
     abordagem = normalizar_abordagem(item.get("abordagem"))
     pacote = avaliacoes.get(chave_registro(item), {})
     primaria = pacote.get("primaria", {})
     reversa = pacote.get("reversa", {})
     secundaria = pacote.get("secundaria", {})
-    objetiva = answer_match_objetivo(item, item.get("resposta_gerada", ""))
+    deterministica = (avaliacoes_deterministicas or {}).get(chave_registro(item))
+    objetiva = deterministica or answer_match_objetivo(item, item.get("resposta_gerada", ""))
+    if deterministica:
+        objetiva = {
+            "resposta_final": deterministica.get("resposta_final_extraida"),
+            "referencia_curta": deterministica.get("referencia_curta"),
+            "exact_match": deterministica.get("exact_match"),
+            "numeric_match": deterministica.get("numeric_match"),
+            "symbolic_equivalence": deterministica.get("symbolic_equivalence"),
+            "answer_match_objetivo": deterministica.get("veredito_deterministico"),
+            "metrica_objetiva": deterministica.get("metrica_deterministica", ""),
+        }
     answer_match = escolher_answer_match(item, objetiva, primaria)
     oracle_objetivo = extrair_oracle_objetivo(item)
     oracle_juiz = normalizar_binario(
@@ -221,6 +248,14 @@ def normalizar_linha(item, avaliacoes, avaliacoes_humanas=None):
         "answer_match": answer_match,
         "correta": answer_match,
         "metrica_objetiva": objetiva.get("metrica_objetiva"),
+        "fonte_avaliacao_principal": (
+            deterministica.get("fonte_avaliacao_recomendada")
+            if deterministica
+            else ""
+        ),
+        "necessita_llm_juiz": (
+            deterministica.get("necessita_llm_juiz") if deterministica else ""
+        ),
         "pontuacao_juiz": valor_float(primaria.get("pontuacao")),
         "tipo_erro": primaria.get("tipo_erro", ""),
         "confianca_juiz": valor_float(primaria.get("confianca")),
@@ -383,6 +418,14 @@ def adicionar_comparacao_base(metricas, campos_contexto):
         )
 
 
+def adicionar_rotulos_condicao(metricas):
+    """Cria um rotulo inequivoco quando ha mais de um modelo na rodada."""
+    for linha in metricas:
+        modelo = str(linha.get("modelo", "")).strip()
+        abordagem = str(linha.get("abordagem", "")).strip()
+        linha["condicao"] = f"{modelo} / {abordagem}" if modelo else abordagem
+
+
 def intervalo_bootstrap_delta(pares, iteracoes, seed):
     if not pares:
         return None, None
@@ -446,6 +489,63 @@ def comparacao_vs_base(linhas, bootstrap_iteracoes, seed):
                 "loss_rate": round(losses / len(pares), 4),
                 "delta_pareado": round(
                     sum(estrategia - base for base, estrategia in pares) / len(pares),
+                    4,
+                ),
+                "delta_ci95_low": ci_low,
+                "delta_ci95_high": ci_high,
+                "mcnemar_p_exato": mcnemar_exato(wins, losses),
+            }
+        )
+    return correcao_holm(saida)
+
+
+def comparacao_entre_modelos_base(linhas, bootstrap_iteracoes, seed):
+    """Compara, de forma pareada, apenas as condicoes base de cada modelo."""
+    por_instancia = defaultdict(dict)
+    for linha in linhas:
+        if linha.get("abordagem") != "base":
+            continue
+        resposta = normalizar_binario(linha.get("answer_match"))
+        modelo = linha.get("modelo", "")
+        if resposta is None or not modelo:
+            continue
+        chave = (linha.get("dataset"), linha.get("id_instancia"))
+        por_instancia[chave][modelo] = resposta
+
+    grupos = defaultdict(list)
+    for (dataset, _), respostas in por_instancia.items():
+        for modelo_referencia, modelo_comparado in combinations(sorted(respostas), 2):
+            grupos[(dataset, modelo_referencia, modelo_comparado)].append(
+                (respostas[modelo_referencia], respostas[modelo_comparado])
+            )
+
+    saida = []
+    for indice, ((dataset, referencia, comparado), pares) in enumerate(
+        sorted(grupos.items())
+    ):
+        wins = sum(base == 0 and estrategia == 1 for base, estrategia in pares)
+        losses = sum(base == 1 and estrategia == 0 for base, estrategia in pares)
+        ties = len(pares) - wins - losses
+        ci_low, ci_high = intervalo_bootstrap_delta(
+            pares,
+            bootstrap_iteracoes,
+            seed + indice,
+        )
+        saida.append(
+            {
+                "dataset": dataset,
+                "modelo_referencia": referencia,
+                "modelo_comparado": comparado,
+                "n_pareado": len(pares),
+                "wins_modelo_comparado": wins,
+                "ties": ties,
+                "losses_modelo_comparado": losses,
+                "win_rate_modelo_comparado": round(wins / len(pares), 4),
+                "tie_rate": round(ties / len(pares), 4),
+                "loss_rate_modelo_comparado": round(losses / len(pares), 4),
+                "delta_pareado_comparado_menos_referencia": round(
+                    sum(comparado_valor - referencia_valor for referencia_valor, comparado_valor in pares)
+                    / len(pares),
                     4,
                 ),
                 "delta_ci95_low": ci_low,
@@ -575,6 +675,12 @@ def main():
         default=[],
         help="Arquivos/diretorios de avaliacoes LLM-as-a-Judge.",
     )
+    parser.add_argument(
+        "--avaliacoes-deterministicas",
+        nargs="*",
+        default=[],
+        help="Arquivos/diretorios produzidos por avaliar_deterministico.py.",
+    )
     parser.add_argument("--avaliacao-humana", help="CSV preenchido por avaliadores humanos.")
     parser.add_argument("--chave-humana", help="JSON de mapeamento da amostra humana.")
     parser.add_argument("--bootstrap-iterations", type=int, default=5000)
@@ -584,12 +690,15 @@ def main():
 
     resultados = carregar_resultados(args.resultados)
     avaliacoes = carregar_avaliacoes(args.avaliacoes)
+    avaliacoes_deterministicas = carregar_avaliacoes_deterministicas(
+        args.avaliacoes_deterministicas
+    )
     humanas = carregar_avaliacao_humana(
         args.avaliacao_humana,
         args.chave_humana,
     )
     linhas = [
-        normalizar_linha(item, avaliacoes, humanas)
+        normalizar_linha(item, avaliacoes, humanas, avaliacoes_deterministicas)
         for item in resultados
     ]
 
@@ -598,13 +707,13 @@ def main():
 
     metricas_por_abordagem = agregar(
         linhas,
-        ["abordagem"],
+        ["modelo", "abordagem"],
         args.bootstrap_iterations,
         args.seed,
     )
     metricas_por_dataset_abordagem = agregar(
         linhas,
-        ["dataset", "abordagem"],
+        ["modelo", "dataset", "abordagem"],
         args.bootstrap_iterations,
         args.seed,
     )
@@ -614,13 +723,24 @@ def main():
         args.bootstrap_iterations,
         args.seed,
     )
-    adicionar_comparacao_base(metricas_por_dataset_abordagem, ["dataset"])
+    adicionar_comparacao_base(
+        metricas_por_dataset_abordagem,
+        ["modelo", "dataset"],
+    )
     adicionar_comparacao_base(
         metricas_por_modelo_dataset_abordagem,
         ["modelo", "dataset"],
     )
+    adicionar_rotulos_condicao(metricas_por_abordagem)
+    adicionar_rotulos_condicao(metricas_por_dataset_abordagem)
+    adicionar_rotulos_condicao(metricas_por_modelo_dataset_abordagem)
 
     win_tie_loss = comparacao_vs_base(
+        linhas,
+        args.bootstrap_iterations,
+        args.seed,
+    )
+    comparacao_modelos = comparacao_entre_modelos_base(
         linhas,
         args.bootstrap_iterations,
         args.seed,
@@ -643,6 +763,7 @@ def main():
         "metricas_por_dataset_abordagem.csv": metricas_por_dataset_abordagem,
         "metricas_por_modelo_dataset_abordagem.csv": metricas_por_modelo_dataset_abordagem,
         "win_tie_loss_vs_baseline.csv": win_tie_loss,
+        "comparacao_pareada_modelos_base.csv": comparacao_modelos,
         "auditoria_position_bias.csv": position_bias,
         "concordancia_avaliadores.csv": concordancias,
         "metricas_truthfulqa.csv": truthfulqa,
@@ -654,6 +775,7 @@ def main():
     resumo = {
         "total_respostas": len(linhas),
         "total_avaliacoes_llm_judge": len(avaliacoes),
+        "total_avaliacoes_deterministicas": len(avaliacoes_deterministicas),
         "total_avaliacoes_humanas": len(humanas),
         "bootstrap_iterations": args.bootstrap_iterations,
         "seed": args.seed,

@@ -5,7 +5,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 from transformers import AutoModel, AutoTokenizer
@@ -52,14 +52,30 @@ def carregar_modelo(model_id: str = MODEL_ID, device: str = "auto", dtype: str =
     return tokenizer, model, torch_device
 
 
-def montar_prompt(tokenizer, pergunta: str) -> torch.Tensor:
-    messages = [{"role": "user", "content": pergunta}]
+def montar_prompt(
+    tokenizer,
+    pergunta: str,
+    instrucao_sistema: Optional[str] = None,
+) -> torch.Tensor:
+    """Monta uma conversa no formato nativo do tokenizer do Nemotron."""
+    messages = []
+    if instrucao_sistema:
+        messages.append({"role": "system", "content": instrucao_sistema})
+    messages.append({"role": "user", "content": pergunta})
     prompt = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=True,
     )
     return tokenizer(prompt, return_tensors="pt").input_ids
+
+
+def normalizar_nfe(nfe):
+    """Converte o contador opcional do modelo para um valor serializavel."""
+    try:
+        return int(nfe)
+    except (TypeError, ValueError):
+        return nfe
 
 
 def ajustar_tokens_diffusion(max_new_tokens: int, block_length: int) -> int:
@@ -116,6 +132,87 @@ def gerar_ids(
     )
 
 
+class NemotronDiffusionRunner:
+    """Mantem o Nemotron carregado para responder varias perguntas em sequencia.
+
+    O script original carregava o modelo a cada chamada de ``gerar_resposta``.
+    Para benchmarks isso multiplicaria o tempo de carregamento por centenas de
+    itens. Esta classe carrega uma unica vez e expoe uma inferencia por item.
+    """
+
+    def __init__(
+        self,
+        model_id: str = MODEL_ID,
+        modo: str = "diffusion",
+        max_new_tokens: int = 64,
+        block_length: int = 32,
+        threshold: float = 0.9,
+        temperature: float = 0.0,
+        device: str = "auto",
+        dtype: str = "auto",
+    ):
+        if modo not in MODOS_VALIDOS:
+            raise ValueError(f"Modo invalido: {modo}. Use um de {MODOS_VALIDOS}.")
+
+        self.model_id = model_id
+        self.modo = modo
+        self.max_new_tokens = max_new_tokens
+        self.block_length = block_length
+        self.threshold = threshold
+        self.temperature = temperature
+        self.dtype = dtype
+        self.tokenizer, self.model, self.torch_device = carregar_modelo(
+            model_id=model_id,
+            device=device,
+            dtype=dtype,
+        )
+
+    def gerar(
+        self,
+        pergunta: str,
+        instrucao_sistema: Optional[str] = None,
+    ) -> Tuple[str, Dict]:
+        """Gera uma resposta e telemetria padronizada para um item."""
+        prompt_ids = montar_prompt(
+            self.tokenizer,
+            pergunta,
+            instrucao_sistema=instrucao_sistema,
+        ).to(self.torch_device)
+        inicio = time.perf_counter()
+        with torch.inference_mode():
+            out_ids, nfe = gerar_ids(
+                model=self.model,
+                prompt_ids=prompt_ids,
+                modo=self.modo,
+                max_new_tokens=self.max_new_tokens,
+                block_length=self.block_length,
+                threshold=self.threshold,
+                temperature=self.temperature,
+                eos_token_id=self.tokenizer.eos_token_id,
+            )
+        duracao = time.perf_counter() - inicio
+        resposta_ids = out_ids[:, prompt_ids.shape[1] :]
+        texto = self.tokenizer.batch_decode(
+            resposta_ids,
+            skip_special_tokens=True,
+        )[0].strip()
+        input_tokens = int(prompt_ids.shape[1])
+        output_tokens = int(resposta_ids.shape[1])
+        return texto, {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "model_total_duration_seconds": round(duracao, 4),
+            "tokens_per_second": (
+                round(output_tokens / duracao, 4) if output_tokens and duracao else None
+            ),
+            "nfe": normalizar_nfe(nfe),
+            "device": str(self.torch_device),
+            "dtype": self.dtype,
+            "mode": self.modo,
+        }
+
+
 def gerar_resposta(
     pergunta: str,
     modo: str = "diffusion",
@@ -126,69 +223,51 @@ def gerar_resposta(
     device: str = "auto",
     dtype: str = "auto",
 ) -> Tuple[str, int]:
-    tokenizer, model, torch_device = carregar_modelo(device=device, dtype=dtype)
-    prompt_ids = montar_prompt(tokenizer, pergunta).to(torch_device)
-
-    out_ids, nfe = gerar_ids(
-        model=model,
-        prompt_ids=prompt_ids,
+    runner = NemotronDiffusionRunner(
         modo=modo,
         max_new_tokens=max_new_tokens,
         block_length=block_length,
         threshold=threshold,
         temperature=temperature,
-        eos_token_id=tokenizer.eos_token_id,
+        device=device,
+        dtype=dtype,
     )
-    texto = tokenizer.batch_decode(
-        out_ids[:, prompt_ids.shape[1] :],
-        skip_special_tokens=True,
-    )[0]
-    return texto.strip(), nfe
+    texto, telemetria = runner.gerar(pergunta)
+    return texto, telemetria["nfe"]
 
 
 def executar_com_metricas(args) -> Dict:
     inicio_total = time.perf_counter()
     inicio_carregamento = time.perf_counter()
-    tokenizer, model, torch_device = carregar_modelo(device=args.device, dtype=args.dtype)
-    fim_carregamento = time.perf_counter()
-
-    prompt_ids = montar_prompt(tokenizer, args.pergunta).to(torch_device)
-
-    inicio_geracao = time.perf_counter()
-    out_ids, nfe = gerar_ids(
-        model=model,
-        prompt_ids=prompt_ids,
+    runner = NemotronDiffusionRunner(
         modo=args.mode,
         max_new_tokens=args.max_new_tokens,
         block_length=args.block_length,
         threshold=args.threshold,
         temperature=args.temperature,
-        eos_token_id=tokenizer.eos_token_id,
+        device=args.device,
+        dtype=args.dtype,
     )
-    fim_geracao = time.perf_counter()
-
-    resposta = tokenizer.batch_decode(
-        out_ids[:, prompt_ids.shape[1] :],
-        skip_special_tokens=True,
-    )[0].strip()
+    fim_carregamento = time.perf_counter()
+    resposta, telemetria = runner.gerar(args.pergunta)
     fim_total = time.perf_counter()
 
     return {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "model_id": MODEL_ID,
+        "model_id": runner.model_id,
         "pergunta": args.pergunta,
         "resposta": resposta,
         "tempo_total_segundos": round(fim_total - inicio_total, 4),
         "tempo_carregamento_segundos": round(fim_carregamento - inicio_carregamento, 4),
-        "tempo_geracao_segundos": round(fim_geracao - inicio_geracao, 4),
-        "nfe": nfe,
+        "tempo_geracao_segundos": telemetria["model_total_duration_seconds"],
+        "nfe": telemetria["nfe"],
         "parametros": {
             "mode": args.mode,
             "max_new_tokens": args.max_new_tokens,
             "block_length": args.block_length,
             "threshold": args.threshold,
             "temperature": args.temperature,
-            "device": str(torch_device),
+            "device": str(runner.torch_device),
             "dtype": args.dtype,
         },
     }

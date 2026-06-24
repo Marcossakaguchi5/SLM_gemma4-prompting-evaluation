@@ -56,6 +56,26 @@ def main():
         "--output-root",
         output_analise,
     ]
+    avaliacao_deterministica = manifesto.get("avaliacao_deterministica", {})
+    caminho_deterministico = avaliacao_deterministica.get("output_root")
+    diretorio_deterministico = (
+        Path(caminho_deterministico) if caminho_deterministico else None
+    )
+    if diretorio_deterministico is None or not diretorio_deterministico.is_dir():
+        raiz_deterministica = diretorio / "avaliacao_deterministica"
+        rodadas_deterministicas = (
+            sorted(raiz_deterministica.glob("rodada_*"))
+            if raiz_deterministica.is_dir()
+            else []
+        )
+        if rodadas_deterministicas:
+            diretorio_deterministico = rodadas_deterministicas[-1]
+    if (
+        diretorio_deterministico is not None and diretorio_deterministico.is_dir()
+    ):
+        comando_analise.extend(
+            ["--avaliacoes-deterministicas", diretorio_deterministico]
+        )
     csv_humano = texto("HUMAN_EVALUATION_CSV", None)
     chave_humana = texto("HUMAN_EVALUATION_KEY", None)
     if csv_humano:

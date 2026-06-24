@@ -27,6 +27,7 @@ avaliacoes_llm_judge/
 analises_resultados/
 graficos_resultados/
 resultados/
+avaliacoes_deterministicas/
 avaliacao_humana/
 resultado_nemotron_diffusion.json
 

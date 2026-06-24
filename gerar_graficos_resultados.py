@@ -33,6 +33,16 @@ def to_float(valor):
         return None
 
 
+def rotulo_condicao(linha):
+    """Distingue condicoes com a mesma abordagem em modelos diferentes."""
+    condicao = str(linha.get("condicao", "")).strip()
+    if condicao:
+        return condicao
+    modelo = str(linha.get("modelo", "")).strip()
+    abordagem = str(linha.get("abordagem", "")).strip()
+    return f"{modelo} / {abordagem}" if modelo else abordagem
+
+
 def achar_metricas_dir(caminho):
     caminho = Path(caminho)
     if caminho.is_file():
@@ -42,7 +52,7 @@ def achar_metricas_dir(caminho):
 
 def grafico_barras_simples(plt, linhas, coluna_valor, titulo, ylabel, output):
     dados = [
-        (linha.get("abordagem", ""), to_float(linha.get(coluna_valor)))
+        (rotulo_condicao(linha), to_float(linha.get(coluna_valor)))
         for linha in linhas
         if to_float(linha.get(coluna_valor)) is not None
     ]
@@ -70,30 +80,30 @@ def grafico_barras_agrupadas(plt, linhas, coluna_valor, titulo, ylabel, output):
         return False
 
     datasets = sorted({linha["dataset"] for linha in linhas})
-    abordagens = sorted({linha["abordagem"] for linha in linhas})
+    condicoes = sorted({rotulo_condicao(linha) for linha in linhas})
     valores = {
-        (linha["dataset"], linha["abordagem"]): to_float(linha.get(coluna_valor))
+        (linha["dataset"], rotulo_condicao(linha)): to_float(linha.get(coluna_valor))
         for linha in linhas
     }
 
-    largura = 0.8 / max(len(abordagens), 1)
+    largura = 0.8 / max(len(condicoes), 1)
     x_base = list(range(len(datasets)))
     fig, ax = plt.subplots(figsize=(12, 6))
 
-    for indice, abordagem in enumerate(abordagens):
-        xs = [x + (indice - (len(abordagens) - 1) / 2) * largura for x in x_base]
+    for indice, condicao in enumerate(condicoes):
+        xs = [x + (indice - (len(condicoes) - 1) / 2) * largura for x in x_base]
         ys = [
-            valores.get((dataset, abordagem), float("nan"))
+            valores.get((dataset, condicao), float("nan"))
             for dataset in datasets
         ]
-        ax.bar(xs, ys, width=largura, label=abordagem)
+        ax.bar(xs, ys, width=largura, label=condicao)
 
     ax.set_title(titulo)
     ax.set_ylabel(ylabel)
     ax.set_xlabel("Dataset")
     ax.set_xticks(x_base)
     ax.set_xticklabels(datasets, rotation=20, ha="right")
-    ax.legend(title="Abordagem", fontsize=8)
+    ax.legend(title="Modelo / condicao", fontsize=8)
     ax.grid(axis="y", alpha=0.25)
     fig.tight_layout()
     fig.savefig(output, dpi=180)
@@ -108,7 +118,7 @@ def grafico_custo_vs_acuracia(plt, linhas, output):
         duracao = to_float(linha.get("duracao_media_segundos"))
         if acuracia is None or duracao is None:
             continue
-        pontos.append((linha.get("dataset", ""), linha.get("abordagem", ""), duracao, acuracia))
+        pontos.append((linha.get("dataset", ""), rotulo_condicao(linha), duracao, acuracia))
 
     if not pontos:
         return False
@@ -132,7 +142,7 @@ def grafico_win_tie_loss(plt, linhas, output):
     if not linhas:
         return False
     labels = [
-        f"{linha.get('dataset', '')}/{linha.get('abordagem', '')}"
+        f"{linha.get('modelo', '')}/{linha.get('dataset', '')}/{linha.get('abordagem', '')}"
         for linha in linhas
     ]
     wins = [to_float(linha.get("win_rate")) or 0.0 for linha in linhas]
@@ -173,7 +183,7 @@ def svg_escape(texto):
 
 def salvar_svg_barras_simples(linhas, coluna_valor, titulo, ylabel, output):
     dados = [
-        (linha.get("abordagem", ""), to_float(linha.get(coluna_valor)))
+        (rotulo_condicao(linha), to_float(linha.get(coluna_valor)))
         for linha in linhas
         if to_float(linha.get(coluna_valor)) is not None
     ]
@@ -216,9 +226,9 @@ def salvar_svg_barras_agrupadas(linhas, coluna_valor, titulo, ylabel, output):
         return False
 
     datasets = sorted({linha["dataset"] for linha in linhas})
-    abordagens = sorted({linha["abordagem"] for linha in linhas})
+    condicoes = sorted({rotulo_condicao(linha) for linha in linhas})
     valores = {
-        (linha["dataset"], linha["abordagem"]): to_float(linha.get(coluna_valor))
+        (linha["dataset"], rotulo_condicao(linha)): to_float(linha.get(coluna_valor))
         for linha in linhas
     }
     cores = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#f59e0b", "#0891b2", "#4b5563"]
@@ -231,7 +241,7 @@ def salvar_svg_barras_agrupadas(linhas, coluna_valor, titulo, ylabel, output):
     max_axis = max(max_val, 0.0)
     span = max_axis - min_val or 1.0
     group_w = area_w / max(len(datasets), 1)
-    bar_w = group_w / max(len(abordagens), 1) * 0.72
+    bar_w = group_w / max(len(condicoes), 1) * 0.72
 
     def y_para_valor(valor):
         return margem_top + (max_axis - valor) / span * area_h
@@ -248,11 +258,11 @@ def salvar_svg_barras_agrupadas(linhas, coluna_valor, titulo, ylabel, output):
 
     for i, dataset in enumerate(datasets):
         group_x = margem_esq + i * group_w
-        for j, abordagem in enumerate(abordagens):
-            valor = valores.get((dataset, abordagem))
+        for j, condicao in enumerate(condicoes):
+            valor = valores.get((dataset, condicao))
             if valor is None:
                 continue
-            x = group_x + j * (group_w / max(len(abordagens), 1)) + (group_w / max(len(abordagens), 1) - bar_w) / 2
+            x = group_x + j * (group_w / max(len(condicoes), 1)) + (group_w / max(len(condicoes), 1) - bar_w) / 2
             y_val = y_para_valor(valor)
             y = min(y_val, y_zero)
             h = abs(y_zero - y_val)
@@ -260,11 +270,11 @@ def salvar_svg_barras_agrupadas(linhas, coluna_valor, titulo, ylabel, output):
             elementos.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{bar_w:.2f}" height="{h:.2f}" fill="{cor}"/>')
         elementos.append(f'<text x="{group_x + group_w/2:.2f}" y="{margem_top + area_h + 24}" transform="rotate(20 {group_x + group_w/2:.2f} {margem_top + area_h + 24})" text-anchor="start" font-family="Arial" font-size="12">{svg_escape(dataset)}</text>')
 
-    for j, abordagem in enumerate(abordagens):
+    for j, condicao in enumerate(condicoes):
         y = margem_top + j * 22
         cor = cores[j % len(cores)]
         elementos.append(f'<rect x="{largura - margem_dir + 20}" y="{y}" width="14" height="14" fill="{cor}"/>')
-        elementos.append(f'<text x="{largura - margem_dir + 42}" y="{y + 12}" font-family="Arial" font-size="12">{svg_escape(abordagem)}</text>')
+        elementos.append(f'<text x="{largura - margem_dir + 42}" y="{y + 12}" font-family="Arial" font-size="12">{svg_escape(condicao)}</text>')
 
     elementos.append("</svg>")
     output.write_text("\n".join(elementos), encoding="utf-8")
@@ -278,7 +288,7 @@ def salvar_svg_custo_vs_acuracia(linhas, output):
         duracao = to_float(linha.get("duracao_media_segundos"))
         if acuracia is None or duracao is None:
             continue
-        pontos.append((linha.get("dataset", ""), linha.get("abordagem", ""), duracao, acuracia))
+        pontos.append((linha.get("dataset", ""), rotulo_condicao(linha), duracao, acuracia))
     if not pontos:
         return False
 
@@ -320,7 +330,7 @@ def salvar_svg_win_tie_loss(linhas, output):
         return False
 
     labels = [
-        f"{linha.get('dataset', '')}/{linha.get('abordagem', '')}"
+        f"{linha.get('modelo', '')}/{linha.get('dataset', '')}/{linha.get('abordagem', '')}"
         for linha in linhas
     ]
     largura = 1100
@@ -383,6 +393,9 @@ def main():
     args = parser.parse_args()
 
     try:
+        import matplotlib
+
+        matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
         plt = None

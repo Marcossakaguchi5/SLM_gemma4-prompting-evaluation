@@ -1,6 +1,7 @@
 """Pipeline 2: avalia a execucao atual com LLM-as-a-Judge."""
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from configuracao.ambiente import booleano, decimal, inteiro, texto
@@ -19,6 +20,11 @@ def main():
         description="Executa o LLM-as-a-Judge para a execucao definida no .env."
     )
     parser.add_argument("--execucao-dir", help="Sobrescreve PIPELINE_EXECUTION_DIR.")
+    parser.add_argument(
+        "--refazer",
+        action="store_true",
+        help="Cria uma nova avaliação para a rodada, preservando a avaliação anterior.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -32,10 +38,11 @@ def main():
         raise RuntimeError(
             "A geracao desta rodada ainda nao foi concluida. Aguarde todos os benchmarks terminarem."
         )
-    if manifesto.get("avaliacao", {}).get("status") == "concluido":
+    avaliacao_anterior = manifesto.get("avaliacao", {})
+    if avaliacao_anterior.get("status") == "concluido" and not args.refazer:
         raise RuntimeError(
-            "Esta execucao ja possui uma avaliacao concluida; use outra execucao para "
-            "nao misturar rodadas de julgamento."
+            "Esta execucao ja possui uma avaliacao concluida. Para avaliar novamente "
+            "as mesmas respostas, execute com --refazer."
         )
 
     resultados = caminhos_resultados(manifesto)
@@ -50,7 +57,40 @@ def main():
         manifesto.get("configuracao", {}).get("seed", 20260612),
     )
     amostra_secundaria = decimal("SECONDARY_JUDGE_SAMPLE_RATE", 0.10, 0, 1)
-    output_root = diretorio / "avaliacao_juiz"
+    if args.refazer and avaliacao_anterior.get("status") == "concluido":
+        historico = manifesto.setdefault("historico_avaliacoes", [])
+        historico.append(avaliacao_anterior)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_root = diretorio / f"avaliacao_juiz_reavaliacao_{timestamp}"
+    else:
+        output_root = diretorio / "avaliacao_juiz"
+    output_deterministico = diretorio / "avaliacao_deterministica"
+
+    manifesto["avaliacao_deterministica"] = {
+        "status": "em_andamento",
+        "output_root": str(output_deterministico),
+    }
+    if not args.dry_run:
+        atualizar_manifesto(caminho_manifesto, manifesto)
+    try:
+        executar_comando(
+            [
+                python_do_projeto(),
+                "avaliar_deterministico.py",
+                *resultados,
+                "--output-root",
+                output_deterministico,
+            ],
+            dry_run=args.dry_run,
+        )
+    except Exception:
+        manifesto["avaliacao_deterministica"]["status"] = "falhou"
+        if not args.dry_run:
+            atualizar_manifesto(caminho_manifesto, manifesto)
+        raise
+    manifesto["avaliacao_deterministica"]["status"] = "concluido"
+    if not args.dry_run:
+        atualizar_manifesto(caminho_manifesto, manifesto)
 
     comando = [
         python_do_projeto(),
@@ -85,6 +125,8 @@ def main():
         comando.append("--permitir-mesmo-modelo")
     if not booleano("JUDGE_POSITIONAL_AUDIT", True):
         comando.append("--sem-auditoria-posicional")
+    if booleano("JUDGE_ONLY_DETERMINISTIC_FALLBACK", True):
+        comando.append("--apenas-fallback-deterministico")
 
     manifesto["avaliacao"] = {
         "status": "em_andamento",
@@ -106,8 +148,11 @@ def main():
     manifesto["avaliacao"]["status"] = "concluido"
     if not args.dry_run:
         atualizar_manifesto(caminho_manifesto, manifesto)
-    print(f"\nAvaliacao concluida: {output_root}")
-    print("Proximo passo: python pipeline_graficos.py")
+    if args.dry_run:
+        print("\nSimulacao concluida; nenhum arquivo foi criado nem houve chamada ao juiz.")
+    else:
+        print(f"\nAvaliacao concluida: {output_root}")
+        print("Proximo passo: python -m pipelines.graficos")
 
 
 if __name__ == "__main__":
