@@ -39,7 +39,7 @@
       "status": "concluido"
     }
   },
-  "atualizado_em": "2026-06-25T03:09:26",
+  "atualizado_em": "2026-06-25T04:18:50",
   "amostras": {
     "status": "concluido",
     "perguntas": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\amostras\\perguntas_amostradas.json",
@@ -63,5 +63,13 @@
     "provider": "openrouter",
     "judge_model": "deepseek/deepseek-v4-flash",
     "seed": 20260612
+  },
+  "analise": {
+    "status": "concluido",
+    "output_root": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\analise",
+    "seed": 20260612,
+    "bootstrap_iterations": 5000,
+    "metricas": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\analise\\rodada_20260625_041843",
+    "graficos": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\graficos"
   }
 }
