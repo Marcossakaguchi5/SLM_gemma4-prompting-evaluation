@@ -1,5 +1,0 @@
-dataset,modelo_referencia,modelo_comparado,n_pareado,wins_modelo_comparado,ties,losses_modelo_comparado,win_rate_modelo_comparado,tie_rate,loss_rate_modelo_comparado,delta_pareado_comparado_menos_referencia,delta_ci95_low,delta_ci95_high,mcnemar_p_exato,mcnemar_p_holm
-ARC-Challenge,gemma4:e4b,nvidia/Nemotron-Labs-Diffusion-3B,10,0,8,2,0.0,0.8,0.2,-0.2,-0.5,0.0,0.5,1.0
-EleutherAI/hendrycks_math,gemma4:e4b,nvidia/Nemotron-Labs-Diffusion-3B,10,0,4,6,0.0,0.4,0.6,-0.6,-0.9,-0.3,0.03125,0.09375
-GSM8K,gemma4:e4b,nvidia/Nemotron-Labs-Diffusion-3B,10,0,2,8,0.0,0.2,0.8,-0.8,-1.0,-0.5,0.007812,0.031248
-truthfulqa/truthful_qa,gemma4:e4b,nvidia/Nemotron-Labs-Diffusion-3B,10,0,8,2,0.0,0.8,0.2,-0.2,-0.5,0.0,0.5,1.0
