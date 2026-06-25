@@ -31,6 +31,32 @@ python -m pipelines.avaliacao
 python -m pipelines.graficos
 ```
 
+Para uma continuação sem TruthfulQA, gerando apenas datasets objetivos e usando
+essa nova rodada na avaliação/gráficos:
+
+```powershell
+python -m pipelines.continuacao_sem_truthful
+```
+
+## 3.1 Retomada de uma rodada interrompida
+
+Cada resposta gerada, resposta Nemotron e veredito do juiz é gravado como
+checkpoint. Se houver queda de energia, travamento ou interrupção manual, use a
+mesma pasta de rodada e o respectivo comando abaixo; resultados já concluídos não
+são reenviados ao modelo ou à API.
+
+```powershell
+python -m pipelines.geracao --retomar --execucao-dir resultados/rodada_YYYYMMDD_HHMMSS
+python -m pipelines.nemotron --retomar --execucao-dir resultados/rodada_YYYYMMDD_HHMMSS
+python -m pipelines.avaliacao --retomar --execucao-dir resultados/rodada_YYYYMMDD_HHMMSS
+```
+
+Para gráficos, basta executar novamente `python -m pipelines.graficos` para a
+mesma rodada: esta etapa não chama LLM/API e pode ser refeita sem custo de
+inferência. Rodadas criadas antes deste ajuste podem não ter o diretório de
+checkpoint registrado; nesse caso, inicie uma nova rodada para não misturar
+arquivos antigos.
+
 Os scripts usam a mesma execução: a geração cria uma pasta em `PIPELINE_OUTPUT_ROOT`, e os dois pipelines seguintes consomem automaticamente a última execução criada. A geração, a avaliação e os gráficos permanecem separados para que seja possível inspecionar cada etapa.
 
 Para validar a configuração sem chamar modelos ou baixar datasets:

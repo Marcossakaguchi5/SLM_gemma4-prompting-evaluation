@@ -1,13 +1,13 @@
 """Pipeline opcional: executa somente o Nemotron sobre a amostra ja congelada."""
 
 import argparse
-from datetime import datetime
 from pathlib import Path
 
 from .util import (
     ambiente_com_configuracao,
     atualizar_manifesto,
     caminhos_resultados,
+    criar_diretorio_etapa,
     executar_comando,
     ler_manifesto,
     obter_execucao_atual,
@@ -38,18 +38,26 @@ def obter_amostra(manifesto, diretorio, dry_run=False):
     return perguntas, referencias, True
 
 
-def output_root_nemotron(diretorio, experimento_anterior):
+def destino_nemotron(diretorio, experimento_anterior, retomar):
     if not experimento_anterior:
-        return diretorio / "geracao" / "nemotron_diffusion"
+        output_root = diretorio / "geracao" / "nemotron_diffusion"
+        return output_root, criar_diretorio_etapa(output_root)
     if experimento_anterior.get("status") == "concluido":
         raise RuntimeError(
             "Esta rodada ja possui uma execucao Nemotron concluida. Crie uma nova "
             "rodada de geracao para manter uma unica resposta Nemotron por pergunta."
         )
-    if experimento_anterior.get("status") == "em_andamento":
-        raise RuntimeError("Ja existe uma execucao Nemotron marcada como em andamento.")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return diretorio / "geracao" / f"nemotron_diffusion_reexecucao_{timestamp}"
+    if not retomar:
+        raise RuntimeError(
+            "Existe um checkpoint Nemotron interrompido. Execute novamente com --retomar."
+        )
+    run_dir = experimento_anterior.get("run_dir")
+    if not run_dir:
+        raise RuntimeError(
+            "Este checkpoint foi criado por uma versao anterior sem run_dir. "
+            "Execute uma nova rodada Nemotron para criar checkpoints retomaveis."
+        )
+    return Path(experimento_anterior["output_root"]), Path(run_dir)
 
 
 def main():
@@ -57,6 +65,11 @@ def main():
         description="Executa somente o Nemotron sobre a amostra da rodada atual."
     )
     parser.add_argument("--execucao-dir", help="Sobrescreve PIPELINE_EXECUTION_DIR.")
+    parser.add_argument(
+        "--retomar",
+        action="store_true",
+        help="Retoma a rodada Nemotron interrompida a partir do JSONL parcial.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -75,7 +88,7 @@ def main():
         dry_run=args.dry_run,
     )
     anterior = manifesto.get("experimentos", {}).get("nemotron_diffusion")
-    output_root = output_root_nemotron(diretorio, anterior)
+    output_root, run_dir = destino_nemotron(diretorio, anterior, args.retomar)
     esperado = int(manifesto.get("configuracao", {}).get("amostras", 100))
     comando = [
         python_do_projeto(),
@@ -98,6 +111,7 @@ def main():
     manifesto.setdefault("experimentos", {})["nemotron_diffusion"] = {
         "script": "experimento_nemotron_diffusion.py",
         "output_root": str(output_root),
+        "run_dir": str(run_dir),
         "tipo": "modelo_baseline_externo",
         "amostra_perguntas": str(perguntas),
         "amostra_referencias": str(referencias),
@@ -107,7 +121,10 @@ def main():
     try:
         executar_comando(
             comando,
-            ambiente_com_configuracao(EXPERIMENT_OUTPUT_ROOT=output_root),
+            ambiente_com_configuracao(
+                EXPERIMENT_OUTPUT_ROOT=output_root,
+                EXPERIMENT_RUN_DIR=run_dir,
+            ),
         )
     except Exception:
         manifesto["experimentos"]["nemotron_diffusion"]["status"] = "falhou"

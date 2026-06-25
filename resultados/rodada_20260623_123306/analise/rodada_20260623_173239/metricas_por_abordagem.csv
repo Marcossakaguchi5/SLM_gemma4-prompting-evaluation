@@ -1,0 +1,5 @@
+abordagem,total,status_ok,erros_operacionais,erros_avaliacao,avaliadas,corretas,acuracia,answer_match_rate,accuracy_ci95_low,accuracy_ci95_high,exact_match_rate,exact_match_n,symbolic_equivalence_rate,symbolic_equivalence_n,truthfulness_rate,truthfulness_n,informativeness_rate,informativeness_n,oracle_at_3_rate,oracle_at_3_n,pontuacao_media_juiz,duracao_media_segundos,duracao_total_segundos,chamadas_slm_media,chamadas_slm_total,input_tokens_media,output_tokens_media,tokens_per_second_media,accuracy_per_second
+base,40,40,0,0,40,32,0.8,0.8,0.675,0.925,0.5,40,0.75,8,0.625,8,0.625,8,,0,0.5714,182.4655,7298.62,1.0,40,205.875,701.8,89.8271,0.004384
+cot,40,40,0,0,40,33,0.825,0.825,0.7,0.925,0.575,40,1.0,6,0.625,8,0.625,8,,0,0.5,209.5972,8383.89,1.0,40,221.625,970.975,90.0559,0.003936
+for,40,40,0,0,40,31,0.775,0.775,0.65,0.9,0.55,40,0.8333,6,0.5,8,0.625,8,,0,0.4643,204.2733,8170.93,1.0,40,299.875,1190.8,89.7703,0.003794
+gflow,40,40,0,0,40,32,0.8,0.8,0.675,0.925,0.575,40,1.0,6,0.625,8,0.625,8,0.825,40,0.5,268.2492,10729.97,3.0,120,647.875,3220.05,90.5757,0.002982

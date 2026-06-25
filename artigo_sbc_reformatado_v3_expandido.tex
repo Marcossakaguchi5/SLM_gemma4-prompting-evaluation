@@ -29,12 +29,12 @@ Faculdade de Ciências -- Bauru, SP -- Brasil\\
 \maketitle
 
 \begin{abstract}
-This paper presents an experimental protocol for comparing prompting strategies in a local Small Language Model executed through Ollama. The protocol evaluates direct answering, Chain-of-Thought, Flow of Reasoning, and a three-trajectory strategy inspired by GFlowNets over GSM8K, ARC-Challenge, Hendrycks MATH/AIME, and TruthfulQA. Answers are standardized with \texttt{RESPOSTA\_FINAL}, stored in auditable JSON/JSONL files, and assessed through deterministic matching, symbolic equivalence, and an external reference-based LLM-as-a-Judge. The protocol also measures Oracle@3, bootstrap confidence intervals, judge position bias, human agreement, and cost-adjusted accuracy. A preliminary pilot uses the same frozen questions to include Nemotron Diffusion as an external-model baseline, separately from the prompting strategies applied to Gemma 4.
+This paper presents an experimental protocol for comparing prompting strategies in a local Small Language Model executed through Ollama. The protocol evaluates direct answering, Chain-of-Thought, Flow of Reasoning, and a three-trajectory strategy inspired by GFlowNets over GSM8K, ARC-Challenge, Hendrycks MATH/AIME, and TruthfulQA. Answers are standardized with \texttt{RESPOSTA\_FINAL}, stored in auditable JSON/JSONL files, and assessed through deterministic matching, symbolic equivalence, and an external reference-based LLM-as-a-Judge configured with \texttt{deepseek/deepseek-v4-flash}. The protocol also measures Oracle@3, bootstrap confidence intervals, judge position bias, human agreement, and cost-adjusted accuracy. A preliminary pilot uses the same frozen questions to include Nemotron Diffusion as an external-model baseline, separately from the prompting strategies applied to Gemma 4; an additional objective-only continuation round omits TruthfulQA and expands the deterministic-evaluation portion of the study.
 \end{abstract}
 
 \begin{resumo}
-Este trabalho apresenta um protocolo experimental para comparar estratégias de prompting em um Small Language Model local executado via Ollama. O protocolo avalia resposta direta, Chain-of-Thought, Flow of Reasoning e uma estratégia multi-trajetória inspirada em GFlowNets nos datasets GSM8K, ARC-Challenge, Hendrycks MATH/AIME e TruthfulQA. As respostas são padronizadas com \texttt{RESPOSTA\_FINAL}, armazenadas em JSON/JSONL auditável e avaliadas por comparação determinística, equivalência simbólica e LLM-juiz externo baseado em referência. O protocolo também mede Oracle@3, intervalos de confiança por bootstrap, viés posicional do juiz, concordância humana e acurácia ajustada pelo custo.
-Como extens\~ao, um piloto preliminar usa as mesmas perguntas congeladas para incluir o Nemotron Diffusion como baseline de modelo externo, sem o confundir com uma quinta estrat\'egia de prompting do Gemma 4.
+Este trabalho apresenta um protocolo experimental para comparar estratégias de prompting em um Small Language Model local executado via Ollama. O protocolo avalia resposta direta, Chain-of-Thought, Flow of Reasoning e uma estratégia multi-trajetória inspirada em GFlowNets nos datasets GSM8K, ARC-Challenge, Hendrycks MATH/AIME e TruthfulQA. As respostas são padronizadas com \texttt{RESPOSTA\_FINAL}, armazenadas em JSON/JSONL auditável e avaliadas por comparação determinística, equivalência simbólica e LLM-juiz externo baseado em referência, configurado com \texttt{deepseek/deepseek-v4-flash}. O protocolo também mede Oracle@3, intervalos de confiança por bootstrap, viés posicional do juiz, concordância humana e acurácia ajustada pelo custo.
+Como extens\~ao, um piloto preliminar usa as mesmas perguntas congeladas para incluir o Nemotron Diffusion como baseline de modelo externo, sem o confundir com uma quinta estrat\'egia de prompting do Gemma 4. Uma rodada complementar sem TruthfulQA amplia apenas os datasets objetivos, reduzindo a dependência do LLM-juiz e aumentando a parcela avaliada por regras determinísticas.
 \end{resumo}
 
 \section{Introdução}
@@ -60,7 +60,7 @@ As perguntas de pesquisa que orientam o trabalho são:
 
 As contribuições do trabalho podem ser resumidas em cinco pontos. Primeiro, apresenta-se um protocolo experimental reprodutível para comparar estratégias de inferência em SLMs locais. Segundo, formaliza-se uma adaptação multi-trajetória com seleção por consenso sem gabarito e cálculo separado de \textit{Oracle@3}. Terceiro, implementa-se um LLM-as-a-Judge externo com auditoria por ordem reversa e suporte a um segundo juiz. Quarto, combinam-se métricas determinísticas, equivalência simbólica, Truthfulness e Informativeness. Quinto, organizam-se scripts para geração, avaliação humana cega, consolidação estatística com bootstrap e visualização gráfica.
 
-O fluxo experimental prevê a seleção de 100 instâncias por dataset, execução do modelo sob cada estratégia, padronização da saída no marcador \texttt{RESPOSTA\_FINAL}, persistência em arquivos JSON/JSONL, avaliação por LLM como juiz, consolidação de métricas e geração de gráficos. Este artigo descreve os fundamentos conceituais, a metodologia e o desenvolvimento do pipeline experimental, deixando a análise quantitativa final para etapa posterior. Os resultados quantitativos serão reportados em etapa posterior, após a execução integral do experimento.
+O fluxo experimental prevê a seleção de 100 instâncias por dataset, execução do modelo sob cada estratégia, padronização da saída no marcador \texttt{RESPOSTA\_FINAL}, persistência em arquivos JSON/JSONL, avaliação por matching determinístico e LLM como juiz, consolidação de métricas e geração de gráficos. Além da rodada principal com TruthfulQA, foi incluído um fluxo complementar sem TruthfulQA para ampliar GSM8K, ARC-Challenge e Hendrycks MATH/AIME, isto é, a parte objetiva do estudo. Este artigo descreve os fundamentos conceituais, a metodologia e o desenvolvimento do pipeline experimental, deixando a análise quantitativa final para etapa posterior. Os resultados quantitativos serão reportados em etapa posterior, após a execução integral do experimento.
 
 \section{Trabalhos Relacionados}
 
@@ -102,7 +102,7 @@ Essa adaptação é útil porque CoT e FoR continuam dependentes de uma única t
 
 \subsection{Avaliação Comparativa Externa}
 
-Além de gerar respostas, um protocolo experimental precisa decidir como julgá-las. A decisão metodológica adotada neste trabalho é separar claramente modelo avaliado e modelo avaliador. O SLM local produz respostas sob diferentes estratégias; em seguida, um modelo avaliador configurado separadamente, preferencialmente mais forte, atua como LLM-as-a-Judge, recebendo pergunta, gabarito e todas as respostas concorrentes para aquela mesma instância.
+Além de gerar respostas, um protocolo experimental precisa decidir como julgá-las. A decisão metodológica adotada neste trabalho é separar claramente modelo avaliado e modelo avaliador. O SLM local produz respostas sob diferentes estratégias; em seguida, um modelo avaliador configurado separadamente, preferencialmente mais forte, atua como LLM-as-a-Judge, recebendo pergunta, gabarito e todas as respostas concorrentes para aquela mesma instância. Na configuração final do experimento, o juiz primário é \texttt{deepseek/deepseek-v4-flash}, acessado como modelo externo e registrado no manifesto da rodada.
 
 A avaliação comparativa recebe \texttt{base}, \texttt{cot}, \texttt{for} e \texttt{gflow} no mesmo payload. Para medir viés posicional, cada instância é julgada novamente com a ordem das abordagens invertida. Opcionalmente, uma amostra de 10\% é enviada a um segundo modelo avaliador externo. O prompt instrui o juiz a avaliar apenas a resposta selecionada de \texttt{gflow}; as três trajetórias são usadas separadamente para o diagnóstico \textit{Oracle@3}.
 
@@ -133,6 +133,8 @@ Ap\'os a gera\c{c}\~ao principal, a rodada persiste \texttt{perguntas\_amostrada
 \subsection{Datasets}
 
 O protocolo prevê utilizar 100 perguntas por dataset. A seleção é pseudoaleatória e reproduzível por seed. Quando o dataset oferece categorias, tipos ou subconjuntos, a amostragem é estratificada; os índices originais e a seed são persistidos no manifesto da rodada.
+
+Além da rodada principal, o pipeline permite uma continuação objetiva sem TruthfulQA. Essa continuação preserva o mesmo desenho de geração e avaliação, mas executa apenas GSM8K, ARC-Challenge e Hendrycks MATH/AIME. O objetivo é aumentar o número de instâncias avaliadas por critérios determinísticos ou simbólicos, reduzindo o peso relativo do julgamento semântico do LLM-juiz na análise agregada.
 
 \begin{itemize}
 \item \textbf{GSM8K}: problemas matemáticos em linguagem natural, com foco em raciocínio aritmético multi-etapas \cite{cobbe2021}.
@@ -419,7 +421,7 @@ Metricas, tabelas e graficos
 \label{fig:fluxo-ilustrado}
 \end{figure}
 
-Esse fluxo separa geração e avaliação. O modelo alvo produz respostas, mas não decide sua própria correção final. A etapa de LLM-juiz atua posteriormente, recebendo gabarito e todas as respostas geradas para a mesma pergunta. Cada julgamento continua comparativo, mas é repetido com ordem inversa para possibilitar a auditoria de viés posicional.
+Esse fluxo separa geração e avaliação. O modelo alvo produz respostas, mas não decide sua própria correção final. A etapa de LLM-juiz atua posteriormente, recebendo gabarito e todas as respostas geradas para a mesma pergunta quando a avaliação determinística não é suficiente ou quando o dataset é semântico, como TruthfulQA. Cada julgamento continua comparativo, mas é repetido com ordem inversa para possibilitar a auditoria de viés posicional. Na continuação sem TruthfulQA, a mesma cadeia de geração, avaliação e gráficos é executada sobre uma nova pasta de rodada contendo apenas os datasets objetivos.
 
 \subsection{Persistência e Auditoria}
 
@@ -466,7 +468,7 @@ Para garantir que a compara\c{c}\~ao entre modelos use exatamente as mesmas inst
 
 A avaliação combina três camadas. A primeira é a extração da resposta final. A segunda usa métricas determinísticas: alternativa exata no ARC, comparação numérica no GSM8K e equivalência simbólica via SymPy no MATH/AIME. A terceira é o LLM-as-a-Judge externo, usado para equivalência semântica, TruthfulQA e casos não resolvidos de forma objetiva.
 
-O juiz recebe um payload comparativo por pergunta, inicialmente em ordem embaralhada por seed e depois em ordem inversa. Para o Gemma, o conteúdo inclui pergunta, referência, listas corretas/incorretas do TruthfulQA e as respostas das quatro estratégias. O baseline Nemotron é julgado com a mesma referência, porém em grupo de modelo separado; assim, o ranking de prompting não confunde efeito de prompt com diferença de arquitetura. Para \texttt{gflow}, o juiz avalia oficialmente apenas a resposta selecionada; os rastros alimentam exclusivamente \textit{Oracle@3}. Uma amostra configurável, por padrão 10\%, pode ser enviada a um segundo juiz externo.
+O juiz recebe um payload comparativo por pergunta, inicialmente em ordem embaralhada por seed e depois em ordem inversa. O juiz primário configurado para a rodada integral é \texttt{deepseek/deepseek-v4-flash}. Para o Gemma, o conteúdo inclui pergunta, referência, listas corretas/incorretas do TruthfulQA e as respostas das quatro estratégias. Nos datasets objetivos, esse payload só é encaminhado ao juiz quando a extração ou a equivalência determinística não produz veredito conclusivo; em TruthfulQA, o juiz permanece como avaliador principal. O baseline Nemotron é julgado com a mesma referência, porém em grupo de modelo separado; assim, o ranking de prompting não confunde efeito de prompt com diferença de arquitetura. Para \texttt{gflow}, o juiz avalia oficialmente apenas a resposta selecionada; os rastros alimentam exclusivamente \textit{Oracle@3}. Uma amostra configurável, por padrão 10\%, pode ser enviada a um segundo juiz externo.
 
 O juiz retorna:
 
@@ -610,7 +612,9 @@ O custo esperado varia conforme a estratégia. A linha de base, CoT e FoR usam u
 
 Na execução integral prevista, com quatro datasets e 100 perguntas por dataset, o Gemma consome 2400 chamadas locais: uma para \texttt{base}, \texttt{cot} e \texttt{for}, e três para \texttt{gflow}. A inclusão do baseline Nemotron acrescenta 400 inferências, totalizando 2800 chamadas de geração. O custo temporal entre os dois modelos deve ser interpretado com cautela, pois depende do backend, do dispositivo e do orçamento de tokens de cada execução.
 
-O LLM-juiz opera em duas passagens, ordem original e inversa. Quando todas as instâncias são encaminhadas ao juiz, isso corresponderia a 800 chamadas para os grupos do Gemma e a 800 para os grupos do Nemotron. Na configuração adotada, o filtro determinístico retém TruthfulQA e apenas os casos objetivos sem veredito por código; portanto, o número efetivo de chamadas externas é menor e deve ser registrado no manifesto da rodada. Um segundo juiz em 10\% dos grupos selecionados acrescenta chamadas de auditoria proporcionais ao subconjunto efetivamente julgado.
+O LLM-juiz opera em duas passagens, ordem original e inversa. Quando todas as instâncias são encaminhadas ao juiz, isso corresponderia a 800 chamadas para os grupos do Gemma e a 800 para os grupos do Nemotron. Na configuração adotada, com \texttt{deepseek/deepseek-v4-flash} como juiz primário, o filtro determinístico retém TruthfulQA e apenas os casos objetivos sem veredito por código; portanto, o número efetivo de chamadas externas é menor e deve ser registrado no manifesto da rodada. Um segundo juiz em 10\% dos grupos selecionados acrescenta chamadas de auditoria proporcionais ao subconjunto efetivamente julgado.
+
+Na continuação sem TruthfulQA, a geração mantém o custo local das quatro estratégias sobre GSM8K, ARC-Challenge e Hendrycks MATH/AIME, mas a avaliação externa tende a ser substancialmente menor: apenas respostas objetivas que falham na extração, normalização ou equivalência simbólica são encaminhadas ao juiz. Essa separação torna a ampliação da amostra mais barata e metodologicamente mais robusta, pois a maior parte dos vereditos passa a depender de comparação determinística auditável.
 
 Os gráficos incluem Answer Match, Exact Match, equivalência simbólica, Truthfulness, Informativeness, Oracle@3, Win/Tie/Loss, Position Bias Rate, Accuracy per Second, Gain per Extra Call e custo temporal versus acurácia.
 
@@ -660,6 +664,12 @@ O \texttt{NemotronDiffusionRunner} mant\'em tokenizer e modelo em mem\'oria dura
 Este script implementa a avaliação por LLM como juiz externo. Ele monta um payload comparativo, executa a ordem embaralhada e sua inversão, calcula avaliações de Truthfulness/Informativeness e produz o diagnóstico Oracle@3. Um segundo juiz pode ser aplicado a uma amostra configurável. O uso do mesmo modelo avaliado é bloqueado por padrão.
 
 O retorno do juiz é salvo em JSON, JSONL e em um arquivo comparativo separado. A versão achatada mantém uma linha por abordagem, compatível com o processamento estatístico; a versão comparativa preserva ranking, melhor abordagem e observação relativa por pergunta. Também é gerado um CSV de resumo, facilitando inspeção rápida. Falhas operacionais ou respostas inválidas do juiz são contabilizadas separadamente e não são convertidas automaticamente em erro do SLM.
+
+\subsection{\texttt{pipelines/continuacao\_sem\_truthful.py}}
+
+Este módulo implementa a rodada complementar sem TruthfulQA. Ele orquestra os pipelines já existentes, mas força a seleção de \texttt{gsm8k\_arc} e \texttt{hendrycks\_math}, que correspondem a GSM8K, ARC-Challenge e Hendrycks MATH/AIME. A rodada criada possui manifesto, checkpoints, amostras e saídas próprios, evitando misturar seus resultados com a rodada principal.
+
+Na etapa de avaliação, a continuação objetiva reutiliza \texttt{avaliar\_deterministico.py} e \texttt{avaliar\_llm\_judge.py}. Assim, respostas resolvidas por número, alternativa ou equivalência simbólica são avaliadas por código; apenas casos sem veredito conclusivo são enviados ao juiz externo \texttt{deepseek/deepseek-v4-flash}. Depois disso, os gráficos são produzidos pelo mesmo \texttt{pipelines.graficos}, preservando compatibilidade com as tabelas e figuras do restante do estudo.
 
 \subsection{\texttt{processar\_resultados.py}}
 
@@ -770,11 +780,11 @@ Uma ameaça adicional à comparação entre modelos é a assimetria de infraestr
 
 \section{Considerações Finais e Próximos Passos}
 
-Este trabalho consolidou um protocolo reprodutível para comparar estratégias de prompting no Gemma 4 e acrescentou um baseline externo com Nemotron Diffusion sobre a mesma amostra congelada. A separação entre perguntas e referências, a persistência dos manifestos, o matching determinístico e a auditoria do LLM-juiz tornam o fluxo rastreável e permitem repetir geração, avaliação ou análise sem misturar rodadas.
+Este trabalho consolidou um protocolo reprodutível para comparar estratégias de prompting no Gemma 4 e acrescentou um baseline externo com Nemotron Diffusion sobre a mesma amostra congelada. A separação entre perguntas e referências, a persistência dos manifestos, o matching determinístico e a auditoria do LLM-juiz tornam o fluxo rastreável e permitem repetir geração, avaliação ou análise sem misturar rodadas. A inclusão de uma continuação objetiva sem TruthfulQA amplia a parte do estudo menos dependente de julgamento semântico, mantendo a avaliação externa apenas para fallbacks.
 
 No piloto de 40 perguntas, CoT apresentou a maior acurácia observada no Gemma (82,5\%), mas a diferença de uma resposta em relação à base não foi estatisticamente detectável. A estratégia multi-trajetória obteve a mesma acurácia da base (80,0\%), embora o Oracle@3 tenha mostrado uma resposta correta adicional não escolhida pelo consenso. O Nemotron obteve 35,0\% na condição base e não venceu o baseline Gemma em nenhuma instância pareada; esse resultado deve ser lido como evidência preliminar de correção, não como comparação de eficiência, devido à infraestrutura distinta.
 
-O próximo passo é repetir a rodada com 100 instâncias por dataset, mantendo seed, prompts e configurações registrados. A ampliação deve incluir segundo juiz, avaliação humana cega e uma instalação PyTorch com aceleração compatível para o Nemotron. Com uma amostra maior, será possível estimar intervalos mais estreitos, testar diferenças pareadas com maior poder e separar ganhos reais de prompting, seleção de trajetórias e arquitetura de modelo.
+O próximo passo é repetir a rodada com 100 instâncias por dataset, mantendo seed, prompts e configurações registrados, e usar \texttt{deepseek/deepseek-v4-flash} como juiz primário externo. A ampliação deve incluir a continuação objetiva sem TruthfulQA, segundo juiz, avaliação humana cega e uma instalação PyTorch com aceleração compatível para o Nemotron. Com uma amostra maior, será possível estimar intervalos mais estreitos, testar diferenças pareadas com maior poder e separar ganhos reais de prompting, seleção de trajetórias e arquitetura de modelo.
 
 \begin{thebibliography}{99}
 

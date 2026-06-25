@@ -1,0 +1,20 @@
+{
+  "total_respostas": 200,
+  "total_avaliacoes_llm_judge": 67,
+  "total_avaliacoes_deterministicas": 200,
+  "total_avaliacoes_humanas": 0,
+  "bootstrap_iterations": 5000,
+  "seed": 20260612,
+  "arquivos_gerados": [
+    "respostas_normalizadas.csv",
+    "metricas_por_abordagem.csv",
+    "metricas_por_dataset_abordagem.csv",
+    "metricas_por_modelo_dataset_abordagem.csv",
+    "win_tie_loss_vs_baseline.csv",
+    "comparacao_pareada_modelos_base.csv",
+    "auditoria_position_bias.csv",
+    "concordancia_avaliadores.csv",
+    "metricas_truthfulqa.csv",
+    "metricas_gflow_oracle.csv"
+  ]
+}

@@ -1,0 +1,17 @@
+dataset,abordagem,total,deterministicamente_avaliadas,corretas_deterministicas,pendentes_llm_juiz
+ARC-Challenge,base,10,10,9,0
+ARC-Challenge,cot,10,10,10,0
+ARC-Challenge,for,10,10,9,0
+ARC-Challenge,gflow,10,10,9,0
+EleutherAI/hendrycks_math,base,10,9,7,1
+EleutherAI/hendrycks_math,cot,10,7,7,3
+EleutherAI/hendrycks_math,for,10,7,6,3
+EleutherAI/hendrycks_math,gflow,10,8,7,2
+GSM8K,base,10,10,10,0
+GSM8K,cot,10,10,10,0
+GSM8K,for,10,10,10,0
+GSM8K,gflow,10,10,10,0
+truthfulqa/truthful_qa,base,10,0,0,10
+truthfulqa/truthful_qa,cot,10,0,0,10
+truthfulqa/truthful_qa,for,10,0,0,10
+truthfulqa/truthful_qa,gflow,10,0,0,10

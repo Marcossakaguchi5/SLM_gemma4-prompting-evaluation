@@ -18,6 +18,93 @@ from pathlib import Path
 SEED_PADRAO = 20260612
 
 
+def carregar_checkpoint_jsonl(caminho, chave):
+    """Lê um JSONL parcial e preserva o último registro válido por chave.
+
+    Uma interrupção pode deixar apenas a última linha truncada. Ela é ignorada,
+    enquanto todos os checkpoints completos anteriores continuam utilizáveis.
+    """
+    caminho = Path(caminho)
+    registros = {}
+    if not caminho.is_file():
+        return registros
+
+    with caminho.open("r", encoding="utf-8") as arquivo:
+        for linha in arquivo:
+            linha = linha.strip()
+            if not linha:
+                continue
+            try:
+                item = json.loads(linha)
+            except json.JSONDecodeError:
+                # Uma linha truncada por desligamento nao invalida checkpoints anteriores.
+                continue
+            if not isinstance(item, dict):
+                continue
+            chave_item = chave(item)
+            if chave_item is not None:
+                registros[chave_item] = item
+    return registros
+
+
+def preparar_diretorio_checkpoint(output_root, variavel_ambiente="EXPERIMENT_RUN_DIR"):
+    """Cria uma rodada nova ou reabre a rodada explicitamente informada.
+
+    O pipeline informa ``EXPERIMENT_RUN_DIR`` antes de iniciar cada subprocesso.
+    Se esse diretório já existir, trata-se de uma retomada; caso contrário, o
+    comportamento independente dos scripts continua criando uma rodada com
+    timestamp dentro de ``output_root``.
+    """
+    configurado = os.environ.get(variavel_ambiente)
+    if configurado:
+        run_dir = Path(configurado).expanduser()
+        if run_dir.exists():
+            if not run_dir.is_dir():
+                raise NotADirectoryError(f"Diretorio de checkpoint invalido: {run_dir}")
+            return run_dir, True
+        run_dir.mkdir(parents=True, exist_ok=False)
+        return run_dir, False
+
+    output_root = Path(output_root)
+    output_root.mkdir(parents=True, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    run_dir = output_root / f"rodada_{timestamp}"
+    sufixo = 1
+    while run_dir.exists():
+        run_dir = output_root / f"rodada_{timestamp}_{sufixo:02d}"
+        sufixo += 1
+    run_dir.mkdir()
+    return run_dir, False
+
+
+def chave_checkpoint_resultado(item):
+    identificador = item.get("id_instancia")
+    abordagem = item.get("abordagem")
+    return (identificador, abordagem) if identificador and abordagem else None
+
+
+def adicionar_jsonl_duravel(caminho, registro):
+    """Acrescenta um checkpoint e o descarrega para o disco antes de continuar."""
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    with caminho.open("a", encoding="utf-8") as arquivo:
+        arquivo.write(json.dumps(registro, ensure_ascii=False) + "\n")
+        arquivo.flush()
+        os.fsync(arquivo.fileno())
+
+
+def salvar_json_atomico(caminho, dados, *, indent=2):
+    """Substitui um JSON completo sem deixar um arquivo final parcialmente escrito."""
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    temporario = caminho.with_name(f".{caminho.name}.tmp")
+    with temporario.open("w", encoding="utf-8") as arquivo:
+        json.dump(dados, arquivo, ensure_ascii=False, indent=indent)
+        arquivo.flush()
+        os.fsync(arquivo.fileno())
+    os.replace(temporario, caminho)
+
+
 def seed_experimento():
     return int(os.environ.get("EXPERIMENT_SEED", SEED_PADRAO))
 
@@ -325,7 +412,7 @@ def salvar_manifesto(run_dir, configuracao, ids_amostra, prompts):
         ),
     }
     path = Path(run_dir) / "manifesto_execucao.json"
-    path.write_text(json.dumps(manifesto, ensure_ascii=False, indent=2), encoding="utf-8")
+    salvar_json_atomico(path, manifesto)
     return path
 
 

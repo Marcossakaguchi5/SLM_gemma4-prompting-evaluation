@@ -1,0 +1,13 @@
+modelo,dataset,abordagem,n_pareado,wins,ties,losses,win_rate,tie_rate,loss_rate,delta_pareado,delta_ci95_low,delta_ci95_high,mcnemar_p_exato,mcnemar_p_holm
+gemma4:e4b,ARC-Challenge,cot,10,1,9,0,0.1,0.9,0.0,0.1,0.0,0.3,1.0,1.0
+gemma4:e4b,ARC-Challenge,for,10,0,10,0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,1.0
+gemma4:e4b,ARC-Challenge,gflow,10,0,10,0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,1.0
+gemma4:e4b,EleutherAI/hendrycks_math,cot,10,1,8,1,0.1,0.8,0.1,0.0,-0.3,0.3,1.0,1.0
+gemma4:e4b,EleutherAI/hendrycks_math,for,10,1,8,1,0.1,0.8,0.1,0.0,-0.3,0.3,1.0,1.0
+gemma4:e4b,EleutherAI/hendrycks_math,gflow,10,1,8,1,0.1,0.8,0.1,0.0,-0.3,0.3,1.0,1.0
+gemma4:e4b,GSM8K,cot,10,0,10,0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,1.0
+gemma4:e4b,GSM8K,for,10,0,10,0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,1.0
+gemma4:e4b,GSM8K,gflow,10,0,10,0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,1.0
+gemma4:e4b,truthfulqa/truthful_qa,cot,10,1,9,0,0.1,0.9,0.0,0.1,0.0,0.3,1.0,1.0
+gemma4:e4b,truthfulqa/truthful_qa,for,10,1,8,1,0.1,0.8,0.1,0.0,-0.3,0.3,1.0,1.0
+gemma4:e4b,truthfulqa/truthful_qa,gflow,10,0,10,0,0.0,1.0,0.0,0.0,0.0,0.0,1.0,1.0

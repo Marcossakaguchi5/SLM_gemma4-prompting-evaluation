@@ -8,6 +8,7 @@ from configuracao.ambiente import booleano, decimal, inteiro, texto
 from .util import (
     atualizar_manifesto,
     caminhos_resultados,
+    criar_diretorio_etapa,
     executar_comando,
     ler_manifesto,
     obter_execucao_atual,
@@ -25,8 +26,15 @@ def main():
         action="store_true",
         help="Cria uma nova avaliação para a rodada, preservando a avaliação anterior.",
     )
+    parser.add_argument(
+        "--retomar",
+        action="store_true",
+        help="Retoma o checkpoint de uma avaliacao interrompida, sem novas chamadas ja concluidas.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.refazer and args.retomar:
+        parser.error("Use apenas um entre --refazer e --retomar.")
 
     diretorio = (
         Path(args.execucao_dir).expanduser().resolve()
@@ -39,11 +47,17 @@ def main():
             "A geracao desta rodada ainda nao foi concluida. Aguarde todos os benchmarks terminarem."
         )
     avaliacao_anterior = manifesto.get("avaliacao", {})
-    if avaliacao_anterior.get("status") == "concluido" and not args.refazer:
+    if (
+        avaliacao_anterior.get("status") == "concluido"
+        and not args.refazer
+        and not args.retomar
+    ):
         raise RuntimeError(
             "Esta execucao ja possui uma avaliacao concluida. Para avaliar novamente "
             "as mesmas respostas, execute com --refazer."
         )
+    if args.retomar and avaliacao_anterior.get("status") == "concluido":
+        raise RuntimeError("A avaliacao atual ja esta concluida; nao ha checkpoint pendente.")
 
     resultados = caminhos_resultados(manifesto)
     provider = texto("JUDGE_PROVIDER", "ollama")
@@ -57,13 +71,25 @@ def main():
         manifesto.get("configuracao", {}).get("seed", 20260612),
     )
     amostra_secundaria = decimal("SECONDARY_JUDGE_SAMPLE_RATE", 0.10, 0, 1)
-    if args.refazer and avaliacao_anterior.get("status") == "concluido":
+    if args.retomar:
+        if avaliacao_anterior.get("status") not in {"em_andamento", "falhou"}:
+            raise RuntimeError("Nao existe uma avaliacao interrompida para retomar.")
+        output_root = Path(avaliacao_anterior["output_root"])
+        run_dir_juiz = avaliacao_anterior.get("run_dir")
+        if not run_dir_juiz:
+            rodadas = sorted(output_root.glob("rodada_*"))
+            if not rodadas:
+                raise RuntimeError("Nao encontrei o diretorio de checkpoint do LLM-juiz.")
+            run_dir_juiz = str(rodadas[-1])
+    elif args.refazer and avaliacao_anterior.get("status") == "concluido":
         historico = manifesto.setdefault("historico_avaliacoes", [])
         historico.append(avaliacao_anterior)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_root = diretorio / f"avaliacao_juiz_reavaliacao_{timestamp}"
+        run_dir_juiz = criar_diretorio_etapa(output_root)
     else:
         output_root = diretorio / "avaliacao_juiz"
+        run_dir_juiz = criar_diretorio_etapa(output_root)
     output_deterministico = diretorio / "avaliacao_deterministica"
 
     manifesto["avaliacao_deterministica"] = {
@@ -102,6 +128,8 @@ def main():
         modelo_juiz,
         "--output-root",
         output_root,
+        "--run-dir",
+        run_dir_juiz,
         "--seed",
         str(seed),
         "--secondary-sample-rate",
@@ -131,6 +159,7 @@ def main():
     manifesto["avaliacao"] = {
         "status": "em_andamento",
         "output_root": str(output_root),
+        "run_dir": str(run_dir_juiz),
         "provider": provider,
         "judge_model": modelo_juiz,
         "seed": seed,

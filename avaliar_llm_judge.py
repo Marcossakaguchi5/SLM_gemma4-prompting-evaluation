@@ -17,11 +17,20 @@ from util_experimento import (
     extrair_resposta_final,
     extrair_telemetria_resposta,
     hash_estavel,
+    salvar_json_atomico,
 )
 
 OUTPUT_ROOT = Path("avaliacoes_llm_judge")
 
-def preparar_diretorio_saida(output_root):
+def preparar_diretorio_saida(output_root, run_dir_configurado=None):
+    if run_dir_configurado:
+        run_dir = Path(run_dir_configurado).expanduser()
+        if run_dir.exists():
+            if not run_dir.is_dir():
+                raise NotADirectoryError(f"Diretorio de checkpoint invalido: {run_dir}")
+            return run_dir, True
+        run_dir.mkdir(parents=True, exist_ok=False)
+        return run_dir, False
     output_root.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = output_root / f"rodada_{timestamp}"
@@ -32,7 +41,23 @@ def preparar_diretorio_saida(output_root):
         sufixo += 1
 
     run_dir.mkdir()
-    return run_dir
+    return run_dir, False
+
+
+def carregar_jsonl_checkpoint(caminho, chave):
+    registros = {}
+    caminho = Path(caminho)
+    if not caminho.is_file():
+        return registros
+    with caminho.open("r", encoding="utf-8") as arquivo:
+        for linha in arquivo:
+            try:
+                item = json.loads(linha)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                registros[chave(item)] = item
+    return registros
 
 
 def carregar_json(path):
@@ -482,7 +507,8 @@ def salvar_resumo_csv(avaliacoes, caminho_csv):
             bucket["duracao_soma"] += normalizar_float(registro.get("duracao_segundos"))
             bucket["duracao_n"] += 1
 
-    with caminho_csv.open("w", newline="", encoding="utf-8") as arquivo:
+    temporario = caminho_csv.with_name(f".{caminho_csv.name}.tmp")
+    with temporario.open("w", newline="", encoding="utf-8") as arquivo:
         campos = [
             "dataset",
             "abordagem",
@@ -521,6 +547,18 @@ def salvar_resumo_csv(avaliacoes, caminho_csv):
                     ),
                 }
             )
+        arquivo.flush()
+        os.fsync(arquivo.fileno())
+    os.replace(temporario, caminho_csv)
+
+
+def chave_avaliacao(item):
+    return (
+        item.get("id_instancia"),
+        item.get("dataset"),
+        item.get("modelo", ""),
+        normalizar_abordagem(item.get("abordagem")),
+    )
 
 
 def main():
@@ -544,6 +582,11 @@ def main():
         help="Permite usar no Ollama o mesmo modelo avaliado, apenas para validacao do fluxo.",
     )
     parser.add_argument("--output-root", default=str(OUTPUT_ROOT))
+    parser.add_argument(
+        "--run-dir",
+        default=os.environ.get("JUDGE_RUN_DIR"),
+        help="Diretorio de checkpoint do juiz; existente implica retomada.",
+    )
     parser.add_argument("--limite", type=int, default=None, help="Limite opcional de instancias.")
     parser.add_argument("--sleep", type=float, default=0.0, help="Pausa entre chamadas ao juiz.")
     parser.add_argument(
@@ -629,16 +672,48 @@ def main():
         args.seed,
     )
 
-    run_dir = preparar_diretorio_saida(Path(args.output_root))
+    run_dir, retomando = preparar_diretorio_saida(
+        Path(args.output_root),
+        args.run_dir,
+    )
     jsonl_path = run_dir / "avaliacao_llm_judge.parcial.jsonl"
     json_path = run_dir / "avaliacao_llm_judge.json"
     comparativo_path = run_dir / "avaliacao_llm_judge.comparativa.json"
+    comparativo_parcial_path = run_dir / "avaliacao_llm_judge.comparativa.parcial.jsonl"
     csv_path = run_dir / "resumo_avaliacao_llm_judge.csv"
 
-    avaliacoes = []
-    avaliacoes_comparativas = []
-    with jsonl_path.open("w", encoding="utf-8") as parcial:
-        for indice, grupo in enumerate(grupos, start=1):
+    avaliacoes_por_chave = (
+        carregar_jsonl_checkpoint(jsonl_path, chave_avaliacao) if retomando else {}
+    )
+    comparativas_por_chave = (
+        carregar_jsonl_checkpoint(comparativo_parcial_path, chave_grupo)
+        if retomando
+        else {}
+    )
+    if not retomando:
+        jsonl_path.write_text("", encoding="utf-8")
+        comparativo_parcial_path.write_text("", encoding="utf-8")
+
+    def grupo_concluido(grupo):
+        if chave_grupo(grupo) not in comparativas_por_chave:
+            return False
+        return all(
+            avaliacoes_por_chave.get(chave_avaliacao(item), {}).get("status_avaliacao")
+            == "ok"
+            for item in grupo["itens"].values()
+        )
+
+    grupos_pendentes = [grupo for grupo in grupos if not grupo_concluido(grupo)]
+    if retomando:
+        print(
+            f"Retomando LLM-juiz: {len(grupos) - len(grupos_pendentes)}/"
+            f"{len(grupos)} grupos completos no checkpoint."
+        )
+
+    with jsonl_path.open("a", encoding="utf-8") as parcial, comparativo_parcial_path.open(
+        "a", encoding="utf-8"
+    ) as parcial_comparativo:
+        for indice, grupo in enumerate(grupos_pendentes, start=1):
             seed_grupo = args.seed + hash_estavel(chave_grupo(grupo))
             rng_grupo = random.Random(seed_grupo)
             try:
@@ -693,8 +768,7 @@ def main():
                 except Exception as exc:
                     avaliacao_secundaria = avaliacao_vazia_grupo(grupo, exc)
 
-            avaliacoes_comparativas.append(
-                {
+            registro_comparativo = {
                     "id_instancia": grupo.get("id_instancia"),
                     "modelo": grupo.get("modelo"),
                     "dataset": grupo.get("dataset"),
@@ -725,8 +799,13 @@ def main():
                     "telemetria_juiz_primario": telemetria_primaria,
                     "telemetria_juiz_posicao_reversa": telemetria_reversa,
                     "telemetria_juiz_secundario": telemetria_secundaria,
-                }
+            }
+            comparativas_por_chave[chave_grupo(grupo)] = registro_comparativo
+            parcial_comparativo.write(
+                json.dumps(registro_comparativo, ensure_ascii=False) + "\n"
             )
+            parcial_comparativo.flush()
+            os.fsync(parcial_comparativo.fileno())
 
             avaliacoes_por_abordagem = normalizar_avaliacoes_por_abordagem(
                 avaliacao_comparativa.get("avaliacoes", {}) or {}
@@ -791,23 +870,23 @@ def main():
                     "telemetria_juiz_posicao_reversa": telemetria_reversa,
                     "telemetria_juiz_secundario": telemetria_secundaria,
                 }
-                avaliacoes.append(registro)
+                avaliacoes_por_chave[chave_avaliacao(registro)] = registro
                 parcial.write(json.dumps(registro, ensure_ascii=False) + "\n")
 
             parcial.flush()
+            os.fsync(parcial.fileno())
 
             print(
-                f"[{indice}/{len(grupos)}] {grupo.get('dataset')} | "
+                f"[{len(grupos) - len(grupos_pendentes) + indice}/{len(grupos)}] {grupo.get('dataset')} | "
                 f"{grupo.get('id_instancia')} | abordagens={','.join(sorted(grupo['itens'].keys()))}"
             )
             if args.sleep:
                 time.sleep(args.sleep)
 
-    with json_path.open("w", encoding="utf-8") as arquivo:
-        json.dump(avaliacoes, arquivo, ensure_ascii=False, indent=2)
-
-    with comparativo_path.open("w", encoding="utf-8") as arquivo:
-        json.dump(avaliacoes_comparativas, arquivo, ensure_ascii=False, indent=2)
+    avaliacoes = list(avaliacoes_por_chave.values())
+    avaliacoes_comparativas = list(comparativas_por_chave.values())
+    salvar_json_atomico(json_path, avaliacoes)
+    salvar_json_atomico(comparativo_path, avaliacoes_comparativas)
 
     salvar_resumo_csv(avaliacoes, csv_path)
     print(f"Avaliacao salva em: {json_path}")

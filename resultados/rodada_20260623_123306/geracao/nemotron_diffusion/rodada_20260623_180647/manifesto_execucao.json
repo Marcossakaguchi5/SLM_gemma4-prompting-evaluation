@@ -1,0 +1,71 @@
+{
+  "tipo": "experimento_modelo_baseline_externo",
+  "criado_em": "2026-06-23T18:06:47",
+  "modelo": "nvidia/Nemotron-Labs-Diffusion-3B",
+  "familia_modelo": "nemotron_diffusion",
+  "abordagem": "base",
+  "prompt_version": "v2.0-academic-balanced",
+  "parametros_geracao": {
+    "mode": "diffusion",
+    "max_new_tokens": 128,
+    "block_length": 32,
+    "threshold": 0.9,
+    "temperature": 0.0,
+    "device": "auto",
+    "dtype": "auto"
+  },
+  "fontes_amostra": [
+    "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260623_123306\\amostras\\perguntas_amostradas.json"
+  ],
+  "fontes_referencias": [
+    "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260623_123306\\amostras\\referencias_amostradas.json"
+  ],
+  "ids_amostra": [
+    "arc_0041",
+    "arc_0213",
+    "arc_0293",
+    "arc_0374",
+    "arc_0567",
+    "arc_0822",
+    "arc_0862",
+    "arc_0964",
+    "arc_1035",
+    "arc_1080",
+    "matharena_0138",
+    "matharena_0236",
+    "matharena_0390",
+    "matharena_0451",
+    "matharena_0594",
+    "matharena_0670",
+    "matharena_0861",
+    "matharena_1019",
+    "matharena_1042",
+    "matharena_1217",
+    "gsm8k_0072",
+    "gsm8k_0226",
+    "gsm8k_0464",
+    "gsm8k_0666",
+    "gsm8k_0743",
+    "gsm8k_0819",
+    "gsm8k_0833",
+    "gsm8k_0998",
+    "gsm8k_1052",
+    "gsm8k_1300",
+    "truthfulqa_0054",
+    "truthfulqa_0067",
+    "truthfulqa_0218",
+    "truthfulqa_0239",
+    "truthfulqa_0308",
+    "truthfulqa_0321",
+    "truthfulqa_0323",
+    "truthfulqa_0669",
+    "truthfulqa_0690",
+    "truthfulqa_0734"
+  ],
+  "contagem_por_dataset": {
+    "ARC-Challenge": 10,
+    "EleutherAI/hendrycks_math": 10,
+    "GSM8K": 10,
+    "truthfulqa/truthful_qa": 10
+  }
+}

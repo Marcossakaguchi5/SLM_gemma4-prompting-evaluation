@@ -17,8 +17,13 @@ from configuracao.prompts import (
 )
 from util_experimento import (
     MonitorRecursos,
+    adicionar_jsonl_duravel,
     amostrar_reprodutivel,
+    carregar_checkpoint_jsonl,
+    chave_checkpoint_resultado,
     extrair_telemetria_resposta,
+    preparar_diretorio_checkpoint,
+    salvar_json_atomico,
     salvar_manifesto,
     seed_experimento,
     selecionar_trajetoria_consenso,
@@ -52,6 +57,7 @@ RUN_DIR = None
 OUTPUT_FILE = None
 PARTIAL_OUTPUT_FILE = None
 LOG_FILE = None
+RETOMANDO = False
 
 logger = logging.getLogger("experimento_math_avancado")
 
@@ -66,22 +72,12 @@ ABORDAGEM_ORDEM = {
 }
 
 def preparar_diretorio_rodada():
-    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = OUTPUT_ROOT / f"rodada_{timestamp}"
-    sufixo = 1
-
-    while run_dir.exists():
-        run_dir = OUTPUT_ROOT / f"rodada_{timestamp}_{sufixo:02d}"
-        sufixo += 1
-
-    run_dir.mkdir()
-    return run_dir
+    return preparar_diretorio_checkpoint(OUTPUT_ROOT)
 
 def configurar_arquivos_saida():
-    global RUN_DIR, OUTPUT_FILE, PARTIAL_OUTPUT_FILE, LOG_FILE
+    global RUN_DIR, OUTPUT_FILE, PARTIAL_OUTPUT_FILE, LOG_FILE, RETOMANDO
 
-    RUN_DIR = preparar_diretorio_rodada()
+    RUN_DIR, RETOMANDO = preparar_diretorio_rodada()
     OUTPUT_FILE = RUN_DIR / OUTPUT_FILE_NAME
     PARTIAL_OUTPUT_FILE = RUN_DIR / PARTIAL_OUTPUT_FILE_NAME
     LOG_FILE = RUN_DIR / LOG_FILE_NAME
@@ -100,12 +96,14 @@ def configurar_logging():
     logger.addHandler(console_handler)
 
 def salvar_resultado_parcial(res):
-    with open(PARTIAL_OUTPUT_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(res, ensure_ascii=False) + "\n")
+    adicionar_jsonl_duravel(PARTIAL_OUTPUT_FILE, res)
 
 def salvar_resultados_consolidados(res_lista):
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(res_lista, f, ensure_ascii=False, indent=4)
+    salvar_json_atomico(OUTPUT_FILE, res_lista, indent=4)
+
+
+def carregar_checkpoint():
+    return carregar_checkpoint_jsonl(PARTIAL_OUTPUT_FILE, chave_checkpoint_resultado)
 
 GFLOW_TRAJETORIAS = [
     ("caminho_1_formal", "CAMINHO 1 - FORMAL"),
@@ -297,9 +295,11 @@ async def main():
     logger.info("Diretório desta rodada: %s", RUN_DIR)
 
     # Inicializa os arquivos da rodada atual sem tocar nas rodadas anteriores.
-    with open(PARTIAL_OUTPUT_FILE, "w", encoding="utf-8"):
-        pass
-    salvar_resultados_consolidados([])
+    resultados_por_chave = carregar_checkpoint() if RETOMANDO else {}
+    if not RETOMANDO:
+        with open(PARTIAL_OUTPUT_FILE, "w", encoding="utf-8"):
+            pass
+    salvar_resultados_consolidados(list(resultados_por_chave.values()))
     logger.info("Arquivos de saída inicializados: %s e %s.", OUTPUT_FILE, PARTIAL_OUTPUT_FILE)
 
     dados = carregar_dados_aime()
@@ -327,6 +327,9 @@ async def main():
     tarefas = []
     for item in dados:
         for abordagem, prompt_sistema in PROMPTS.items():
+            checkpoint = resultados_por_chave.get((item["id"], abordagem))
+            if checkpoint and checkpoint.get("status") == "ok":
+                continue
             tarefas.append(
                 processar_instancia(
                     sem_tarefas,
@@ -338,19 +341,21 @@ async def main():
             )
 
     total_tarefas = len(tarefas)
-    resultados = []
+    total_concluidos = sum(
+        item.get("status") == "ok" for item in resultados_por_chave.values()
+    )
 
     try:
         for indice, tarefa in enumerate(asyncio.as_completed(tarefas), start=1):
             resultado = await tarefa
-            resultados.append(resultado)
+            resultados_por_chave[chave_checkpoint_resultado(resultado)] = resultado
             salvar_resultado_parcial(resultado)
-            salvar_resultados_consolidados(resultados)
+            salvar_resultados_consolidados(list(resultados_por_chave.values()))
 
             logger.info(
                 "Progresso: %s/%s salvo com status %s em %ss.",
-                indice,
-                total_tarefas,
+                total_concluidos + indice,
+                total_concluidos + total_tarefas,
                 resultado["status"],
                 resultado["duracao_segundos"],
             )

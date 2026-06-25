@@ -1,0 +1,9 @@
+dataset,abordagem,total,avaliadas,erros_avaliacao,corretas,acuracia,pontuacao_media,duracao_media_segundos
+EleutherAI/hendrycks_math,base,5,5,0,2,0.4,0.4,291.914
+EleutherAI/hendrycks_math,cot,4,4,0,1,0.25,0.25,471.7075
+EleutherAI/hendrycks_math,for,4,4,0,1,0.25,0.25,425.865
+EleutherAI/hendrycks_math,gflow,4,4,0,1,0.25,0.25,674.84
+truthfulqa/truthful_qa,base,20,20,0,10,0.5,0.5,61.694
+truthfulqa/truthful_qa,cot,10,10,0,6,0.6,0.6,122.023
+truthfulqa/truthful_qa,for,10,10,0,5,0.5,0.55,95.545
+truthfulqa/truthful_qa,gflow,10,10,0,6,0.6,0.6,153.823

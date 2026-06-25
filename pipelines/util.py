@@ -20,10 +20,14 @@ EXPERIMENTOS_PRINCIPAIS = ("gsm8k_arc", "hendrycks_math", "truthfulqa")
 
 
 def salvar_json(caminho, dados):
-    Path(caminho).write_text(
-        json.dumps(dados, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    temporario = caminho.with_name(f".{caminho.name}.tmp")
+    with temporario.open("w", encoding="utf-8") as arquivo:
+        json.dump(dados, arquivo, ensure_ascii=False, indent=2)
+        arquivo.flush()
+        os.fsync(arquivo.fileno())
+    os.replace(temporario, caminho)
 
 
 def atualizar_manifesto(caminho, manifesto):
@@ -60,10 +64,27 @@ def criar_execucao():
     return diretorio
 
 
+def criar_diretorio_etapa(output_root):
+    """Reserva um subdiretório de checkpoint sem criá-lo antecipadamente."""
+    output_root = Path(output_root)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    diretorio = output_root / f"rodada_{timestamp}"
+    sufixo = 1
+    while diretorio.exists():
+        diretorio = output_root / f"rodada_{timestamp}_{sufixo:02d}"
+        sufixo += 1
+    return diretorio
+
+
 def salvar_execucao_atual(diretorio_execucao):
     caminho = Path(diretorio_execucao).parent / "ultima_execucao.txt"
     caminho.parent.mkdir(parents=True, exist_ok=True)
-    caminho.write_text(str(Path(diretorio_execucao).resolve()), encoding="utf-8")
+    temporario = caminho.with_name(f".{caminho.name}.tmp")
+    with temporario.open("w", encoding="utf-8") as arquivo:
+        arquivo.write(str(Path(diretorio_execucao).resolve()))
+        arquivo.flush()
+        os.fsync(arquivo.fileno())
+    os.replace(temporario, caminho)
 
 
 def obter_execucao_atual():

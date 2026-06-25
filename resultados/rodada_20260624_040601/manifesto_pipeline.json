@@ -1,0 +1,67 @@
+{
+  "tipo": "pipeline_geracao",
+  "criado_em": "2026-06-24T04:06:01",
+  "status": "concluido",
+  "configuracao": {
+    "modelo": "gemma4:e4b",
+    "seed": 20260612,
+    "amostras": 100,
+    "task_concurrency": 16,
+    "call_concurrency": 4,
+    "prompt_version": "v2.0-academic-balanced"
+  },
+  "experimentos": {
+    "gsm8k_arc": {
+      "script": "experimento_gsm8k_arc.py",
+      "output_root": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\geracao\\gsm8k_arc",
+      "run_dir": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\geracao\\gsm8k_arc\\rodada_20260624_040601",
+      "status": "concluido"
+    },
+    "hendrycks_math": {
+      "script": "experimento_hendrycks_math.py",
+      "output_root": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\geracao\\hendrycks_math",
+      "run_dir": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\geracao\\hendrycks_math\\rodada_20260624_061052",
+      "status": "concluido"
+    },
+    "truthfulqa": {
+      "script": "experimento_truthfulqa.py",
+      "output_root": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\geracao\\truthfulqa",
+      "run_dir": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\geracao\\truthfulqa\\rodada_20260624_100435",
+      "status": "concluido"
+    },
+    "nemotron_diffusion": {
+      "script": "experimento_nemotron_diffusion.py",
+      "output_root": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\geracao\\nemotron_diffusion",
+      "run_dir": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\geracao\\nemotron_diffusion\\rodada_20260624_192141",
+      "tipo": "modelo_baseline_externo",
+      "amostra_perguntas": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\amostras\\perguntas_amostradas.json",
+      "amostra_referencias": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\amostras\\referencias_amostradas.json",
+      "status": "concluido"
+    }
+  },
+  "atualizado_em": "2026-06-25T03:09:26",
+  "amostras": {
+    "status": "concluido",
+    "perguntas": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\amostras\\perguntas_amostradas.json",
+    "referencias": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\amostras\\referencias_amostradas.json",
+    "total": 400,
+    "contagem_por_dataset": {
+      "ARC-Challenge": 100,
+      "EleutherAI/hendrycks_math": 100,
+      "GSM8K": 100,
+      "truthfulqa/truthful_qa": 100
+    }
+  },
+  "avaliacao_deterministica": {
+    "status": "concluido",
+    "output_root": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\avaliacao_deterministica"
+  },
+  "avaliacao": {
+    "status": "concluido",
+    "output_root": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\avaliacao_juiz",
+    "run_dir": "D:\\unesp\\SLM_gemma4-prompting-evaluation\\resultados\\rodada_20260624_040601\\avaliacao_juiz\\rodada_20260624_214623",
+    "provider": "openrouter",
+    "judge_model": "deepseek/deepseek-v4-flash",
+    "seed": 20260612
+  }
+}

@@ -1,0 +1,17 @@
+dataset,abordagem,total,avaliadas,erros_avaliacao,corretas,acuracia,pontuacao_media,duracao_media_segundos
+ARC-Challenge,base,10,10,0,9,0.9,0.9,134.611
+ARC-Challenge,cot,10,10,0,10,1.0,1.0,131.001
+ARC-Challenge,for,10,10,0,9,0.9,0.9,143.868
+ARC-Challenge,gflow,10,10,0,9,0.9,0.9,160.954
+EleutherAI/hendrycks_math,base,10,10,0,7,0.7,0.7,345.478
+EleutherAI/hendrycks_math,cot,10,10,0,7,0.7,0.7,448.928
+EleutherAI/hendrycks_math,for,10,10,0,7,0.7,0.7,436.084
+EleutherAI/hendrycks_math,gflow,10,10,0,7,0.7,0.7,615.784
+GSM8K,base,10,10,0,10,1.0,1.0,134.575
+GSM8K,cot,10,10,0,10,1.0,1.0,136.437
+GSM8K,for,10,10,0,10,1.0,1.0,141.596
+GSM8K,gflow,10,10,0,10,1.0,1.0,142.436
+truthfulqa/truthful_qa,base,10,10,0,7,0.7,0.7,115.198
+truthfulqa/truthful_qa,cot,10,10,0,8,0.8,0.8,122.023
+truthfulqa/truthful_qa,for,10,10,0,7,0.7,0.7,95.545
+truthfulqa/truthful_qa,gflow,10,10,0,7,0.7,0.7,153.823

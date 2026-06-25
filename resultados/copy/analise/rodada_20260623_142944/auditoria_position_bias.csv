@@ -1,0 +1,17 @@
+modelo,dataset,abordagem,n,position_bias_count,position_bias_rate,agreement_rate,cohens_kappa
+gemma4:e4b,ARC-Challenge,base,10,0,0.0,1.0,1.0
+gemma4:e4b,ARC-Challenge,cot,10,0,0.0,1.0,1.0
+gemma4:e4b,ARC-Challenge,for,10,0,0.0,1.0,1.0
+gemma4:e4b,ARC-Challenge,gflow,10,0,0.0,1.0,1.0
+gemma4:e4b,EleutherAI/hendrycks_math,base,10,0,0.0,1.0,1.0
+gemma4:e4b,EleutherAI/hendrycks_math,cot,10,0,0.0,1.0,1.0
+gemma4:e4b,EleutherAI/hendrycks_math,for,10,0,0.0,1.0,1.0
+gemma4:e4b,EleutherAI/hendrycks_math,gflow,10,0,0.0,1.0,1.0
+gemma4:e4b,GSM8K,base,10,0,0.0,1.0,1.0
+gemma4:e4b,GSM8K,cot,10,0,0.0,1.0,1.0
+gemma4:e4b,GSM8K,for,10,0,0.0,1.0,1.0
+gemma4:e4b,GSM8K,gflow,10,0,0.0,1.0,1.0
+gemma4:e4b,truthfulqa/truthful_qa,base,10,1,0.1,0.9,0.7826
+gemma4:e4b,truthfulqa/truthful_qa,cot,10,1,0.1,0.9,0.7368
+gemma4:e4b,truthfulqa/truthful_qa,for,10,1,0.1,0.9,0.7826
+gemma4:e4b,truthfulqa/truthful_qa,gflow,10,1,0.1,0.9,0.7826

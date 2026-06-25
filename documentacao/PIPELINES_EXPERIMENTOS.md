@@ -7,6 +7,7 @@ Os pipelines foram separados para que cada etapa tenha uma responsabilidade clar
 | `pipelines/geracao.py` | Executa os benchmarks e cria uma nova execução isolada. |
 | `pipelines/avaliacao.py` | Executa o LLM-as-a-Judge sobre a última execução gerada. |
 | `pipelines/graficos.py` | Consolida métricas e produz os gráficos da mesma execução. |
+| `pipelines/continuacao_sem_truthful.py` | Cria uma rodada complementar sem TruthfulQA, apenas com datasets objetivos. |
 
 ## Configuração
 
@@ -17,6 +18,7 @@ SLM_MODEL_NAME=gemma4:e4b
 EXPERIMENT_NUM_SAMPLES=10
 EXPERIMENT_SEED=20260612
 PIPELINE_EXPERIMENTS=gsm8k_arc,hendrycks_math,truthfulqa
+PIPELINE_CONTINUACAO_EXPERIMENTS=gsm8k_arc,hendrycks_math
 EXPERIMENT_TASK_CONCURRENCY=16
 EXPERIMENT_CALL_CONCURRENCY=4
 ```
@@ -26,6 +28,44 @@ Com os três benchmarks principais, esse valor gera 10 questões de Hendrycks MA
 `JUDGE_SEED` e `ANALYSIS_SEED` ficam vazias por padrão para reutilizar automaticamente `EXPERIMENT_SEED`. Preencha-as somente se quiser uma seed específica para essas etapas.
 
 Para incluir a arena opcional, adicione `math_avancado` em `PIPELINE_EXPERIMENTS`.
+
+## Continuação objetiva sem TruthfulQA
+
+Quando a ideia for ampliar a amostra apenas dos datasets objetivos, use o
+pipeline complementar:
+
+```powershell
+python -m pipelines.continuacao_sem_truthful
+```
+
+Ele cria uma nova pasta `resultados/rodada_YYYYMMDD_HHMMSS/`, mas força a
+geração somente dos experimentos definidos em
+`PIPELINE_CONTINUACAO_EXPERIMENTS`, por padrão:
+
+```dotenv
+PIPELINE_CONTINUACAO_EXPERIMENTS=gsm8k_arc,hendrycks_math
+```
+
+TruthfulQA não entra nessa rodada. A avaliação usa apenas os resultados novos
+dessa pasta, primeiro por matching determinístico e depois com LLM-juiz somente
+nos fallbacks que não puderem ser resolvidos por código. Ao fim, o mesmo
+pipeline chama os gráficos normais para essa rodada.
+
+Comandos úteis:
+
+```powershell
+# Fazer apenas a geracao objetiva e parar.
+python -m pipelines.continuacao_sem_truthful --sem-avaliacao
+
+# Retomar uma geracao objetiva interrompida.
+python -m pipelines.continuacao_sem_truthful --retomar-geracao --execucao-dir resultados/rodada_YYYYMMDD_HHMMSS
+
+# Avaliar/grafar uma rodada objetiva ja gerada.
+python -m pipelines.continuacao_sem_truthful --pular-geracao --execucao-dir resultados/rodada_YYYYMMDD_HHMMSS
+
+# Parar depois da avaliacao, sem gerar graficos.
+python -m pipelines.continuacao_sem_truthful --sem-graficos
+```
 
 ## Nemotron Diffusion como baseline externo
 
@@ -83,6 +123,31 @@ python -m pipelines.nemotron
 python -m pipelines.avaliacao
 python -m pipelines.graficos
 ```
+
+## Retomada após falha ou desligamento
+
+Geração, Nemotron e LLM-juiz gravam um checkpoint em JSONL ao concluir cada
+resposta. O manifesto da rodada também é atualizado de modo atômico. Portanto,
+se o processo falhar ou o computador desligar, não inicie uma rodada nova: retome
+a mesma pasta, e somente os itens sem `status: "ok"` serão refeitos.
+
+```powershell
+# Retoma os benchmarks Gemma interrompidos.
+python -m pipelines.geracao --retomar --execucao-dir resultados/rodada_YYYYMMDD_HHMMSS
+
+# Retoma somente o Nemotron, sem recarregar/responder itens já concluídos.
+python -m pipelines.nemotron --retomar --execucao-dir resultados/rodada_YYYYMMDD_HHMMSS
+
+# Retoma somente o LLM-juiz; não repete chamadas que já possuem veredito válido.
+python -m pipelines.avaliacao --retomar --execucao-dir resultados/rodada_YYYYMMDD_HHMMSS
+```
+
+Se a rodada interrompida for a última criada, `--execucao-dir` pode ser omitido.
+O pipeline de gráficos não faz inferência nem chama API externa; após uma falha,
+execute novamente `python -m pipelines.graficos --execucao-dir ...`. Ele cria uma
+nova análise de forma segura. Checkpoints retomáveis passam a ser criados nas
+rodadas iniciadas com esta versão; rodadas antigas sem o campo `run_dir` devem
+ser executadas novamente para evitar misturar saídas.
 
 O primeiro pipeline grava `ultima_execucao.txt` no diretório definido por `PIPELINE_OUTPUT_ROOT`; os dois seguintes usam esse apontador. Para processar uma rodada específica, passe `--execucao-dir` aos pipelines de avaliação ou gráficos.
 

@@ -8,6 +8,7 @@ instancia e gera uma resposta-base do Nemotron para cada uma delas.
 import argparse
 import json
 import logging
+import os
 import time
 from collections import Counter
 from datetime import datetime
@@ -20,6 +21,12 @@ from configuracao.prompts import (
     PROMPTS_HENDRYCKS_MATH,
     PROMPTS_MATH_AVANCADO,
     PROMPTS_TRUTHFULQA,
+)
+from util_experimento import (
+    carregar_checkpoint_jsonl,
+    chave_checkpoint_resultado,
+    preparar_diretorio_checkpoint,
+    salvar_json_atomico,
 )
 MODELO_PADRAO = "nvidia/Nemotron-Labs-Diffusion-3B"
 MODOS_VALIDOS = ("diffusion", "ar", "linear-spec")
@@ -42,15 +49,7 @@ ABORDAGEM = "base"
 
 
 def preparar_diretorio_rodada(output_root):
-    output_root.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = output_root / f"rodada_{timestamp}"
-    sufixo = 1
-    while run_dir.exists():
-        run_dir = output_root / f"rodada_{timestamp}_{sufixo:02d}"
-        sufixo += 1
-    run_dir.mkdir()
-    return run_dir
+    return preparar_diretorio_checkpoint(output_root)
 
 
 def configurar_logging(log_file):
@@ -257,7 +256,7 @@ def montar_registro(item, resposta, telemetria, duracao, status="ok", erro=None)
 
 
 def salvar_json(caminho, dados):
-    caminho.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+    salvar_json_atomico(caminho, dados)
 
 
 def salvar_manifesto(run_dir, fontes, referencias, instancias):
@@ -323,6 +322,36 @@ def main():
 
     instancias = extrair_instancias_canonicas(args.fontes, args.referencias)
     validar_tamanho_amostra(instancias, args.expected_per_dataset)
+    run_dir, retomando = preparar_diretorio_rodada(OUTPUT_ROOT)
+    output_file = run_dir / OUTPUT_FILE_NAME
+    partial_file = run_dir / PARTIAL_OUTPUT_FILE_NAME
+    logger = configurar_logging(run_dir / LOG_FILE_NAME)
+    salvar_manifesto(run_dir, args.fontes, args.referencias, instancias)
+    resultados_por_chave = (
+        carregar_checkpoint_jsonl(partial_file, chave_checkpoint_resultado)
+        if retomando
+        else {}
+    )
+    if not retomando:
+        partial_file.write_text("", encoding="utf-8")
+    salvar_json(output_file, list(resultados_por_chave.values()))
+
+    logger.info("Diretorio da rodada Nemotron: %s", run_dir)
+    pendentes = [
+        item
+        for item in instancias
+        if resultados_por_chave.get((item["id_instancia"], ABORDAGEM), {}).get("status")
+        != "ok"
+    ]
+    logger.info(
+        "Itens recebidos: %s | recuperados: %s | pendentes: %s",
+        len(instancias),
+        len(resultados_por_chave),
+        len(pendentes),
+    )
+    if not pendentes:
+        logger.info("Checkpoint ja esta completo; nenhum carregamento de modelo foi necessario.")
+        return
     try:
         from modelo_nemotron_diffusion import NemotronDiffusionRunner
     except ModuleNotFoundError as exc:
@@ -332,15 +361,6 @@ def main():
                 "execute: pip install -r requirements.txt"
             ) from exc
         raise
-    run_dir = preparar_diretorio_rodada(OUTPUT_ROOT)
-    output_file = run_dir / OUTPUT_FILE_NAME
-    partial_file = run_dir / PARTIAL_OUTPUT_FILE_NAME
-    logger = configurar_logging(run_dir / LOG_FILE_NAME)
-    salvar_manifesto(run_dir, args.fontes, args.referencias, instancias)
-    salvar_json(output_file, [])
-
-    logger.info("Diretorio da rodada Nemotron: %s", run_dir)
-    logger.info("Itens recebidos: %s", len(instancias))
     logger.info("Carregando o modelo uma unica vez: %s", MODELO_NEMOTRON)
     inicio_carregamento = time.perf_counter()
     runner = NemotronDiffusionRunner(
@@ -359,9 +379,11 @@ def main():
         runner.torch_device,
     )
 
-    resultados = []
-    with partial_file.open("w", encoding="utf-8") as parcial:
-        for indice, item in enumerate(instancias, start=1):
+    total_concluidos = sum(
+        registro.get("status") == "ok" for registro in resultados_por_chave.values()
+    )
+    with partial_file.open("a", encoding="utf-8") as parcial:
+        for indice, item in enumerate(pendentes, start=1):
             inicio = time.perf_counter()
             try:
                 resposta, telemetria = runner.gerar(
@@ -384,21 +406,26 @@ def main():
                     status="erro",
                     erro=exc,
                 )
-            resultados.append(registro)
+            resultados_por_chave[chave_checkpoint_resultado(registro)] = registro
             parcial.write(json.dumps(registro, ensure_ascii=False) + "\n")
             parcial.flush()
-            salvar_json(output_file, resultados)
+            os.fsync(parcial.fileno())
+            salvar_json(output_file, list(resultados_por_chave.values()))
             logger.info(
                 "[%s/%s] %s | %s | %s | %.2fs",
-                indice,
-                len(instancias),
+                total_concluidos + indice,
+                total_concluidos + len(pendentes),
                 registro.get("dataset"),
                 registro.get("id_instancia"),
                 registro.get("status"),
                 registro.get("duracao_segundos"),
             )
 
-    logger.info("Concluido: %s respostas salvas em %s.", len(resultados), output_file)
+    logger.info(
+        "Concluido: %s respostas salvas em %s.",
+        len(resultados_por_chave),
+        output_file,
+    )
 
 
 if __name__ == "__main__":

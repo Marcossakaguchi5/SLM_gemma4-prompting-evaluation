@@ -19,17 +19,17 @@ htmlcov/
 !.env.example
 
 # Saídas reprodutíveis do pipeline experimental
-resultados_gsm8k_arc/
-resultados_hendrycks_math/
-resultados_truthfulqa/
-resultados_math_avancado/
-avaliacoes_llm_judge/
-analises_resultados/
-graficos_resultados/
-resultados/
-avaliacoes_deterministicas/
-avaliacao_humana/
-resultado_nemotron_diffusion.json
+# resultados_gsm8k_arc/
+# resultados_hendrycks_math/
+# resultados_truthfulqa/
+# resultados_math_avancado/
+# avaliacoes_llm_judge/
+# analises_resultados/
+# graficos_resultados/
+# resultados/
+# avaliacoes_deterministicas/
+# avaliacao_humana/
+# resultado_nemotron_diffusion.json
 
 # Arquivos auxiliares gerados na compilacao do artigo
 *.aux
