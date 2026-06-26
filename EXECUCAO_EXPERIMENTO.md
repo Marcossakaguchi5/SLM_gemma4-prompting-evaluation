@@ -10,7 +10,11 @@ O Ollama deve estar ativo e o modelo definido em `SLM_MODEL_NAME` deve estar ins
 
 ## 2. Configuração
 
-Toda a configuração local fica em `.env`; use `.env.example` como referência. Os pontos principais são modelo, tamanho da amostra, seed, seleção de benchmarks e paralelismo. A configuração atual usa 10 perguntas por dataset e salva cada nova rodada em `resultados/rodada_<timestamp>/`.
+Toda a configuração local fica em `.env`; use `.env.example` como referência. Os pontos principais são modelo, tamanho da amostra, seed, seleção de benchmarks e paralelismo.
+
+A configuração padrão usa `EXPERIMENT_NUM_SAMPLES=10` para teste rápido, validação do ambiente e depuração sem custo alto. A rodada final reportada no artigo usa `EXPERIMENT_NUM_SAMPLES=100`, com 100 instâncias por dataset. Para reproduzir a escala do artigo, copie `.env.article.example` para `.env` antes de iniciar os pipelines.
+
+Cada nova rodada é salva em `resultados/rodada_<timestamp>/`.
 
 O perfil incluído foi ajustado para Ryzen 7 9800X3D, RX 9070 XT de 16 GB e 32 GB de RAM:
 

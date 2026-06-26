@@ -11,7 +11,9 @@ Os pipelines foram separados para que cada etapa tenha uma responsabilidade clar
 
 ## Configuração
 
-Edite `.env`; há uma cópia segura e versionável em `.env.example`. Os campos mais usados são:
+Edite `.env`; há uma cópia segura e versionável em `.env.example`. Esse arquivo usa 10 instâncias por dataset para teste rápido. Para reproduzir a escala da rodada final do artigo, use `.env.article.example`, que define `EXPERIMENT_NUM_SAMPLES=100`.
+
+Os campos mais usados são:
 
 ```dotenv
 SLM_MODEL_NAME=gemma4:e4b

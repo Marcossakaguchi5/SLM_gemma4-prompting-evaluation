@@ -1,22 +1,8 @@
-"""Catálogo central de prompts usados nos experimentos e no LLM-juiz.
-prompts_central.py
+"""Prompt catalog used by the experimental protocol.
 
-Catálogo central de prompts usados nos experimentos e no LLM-juiz.
-
-Versão sugerida: v2.0-academic-balanced
-
-Objetivos desta versão:
-1. Manter compatibilidade com os scripts atuais do repositório.
-2. Padronizar o formato de saída para facilitar parsing automático.
-3. Reduzir viés metodológico entre baseline, CoT e FoR.
-4. Deixar GFlow explicitamente como estratégia multi-trajetória.
-5. Tornar o prompt do LLM-juiz mais rígido, auditável e adequado a artigo acadêmico.
-
-Observação metodológica:
-- base, cot e for são estratégias single-pass, com uma chamada ao SLM.
-- gflow é uma estratégia multi-trajetória, com múltiplas chamadas e agregação por consenso.
-- Portanto, métricas de acurácia devem ser reportadas junto com custo computacional,
-  número de chamadas, latência e tokens.
+This module centralizes the prompt templates for the evaluated strategies:
+base, cot, for and gflow. The templates are versioned through
+PROMPT_VERSION and reused by the generation and evaluation pipelines.
 """
 
 PROMPT_VERSION = "v2.0-academic-balanced"
