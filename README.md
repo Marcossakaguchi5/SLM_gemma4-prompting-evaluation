@@ -73,14 +73,16 @@ Se uma etapa falhar, use `--retomar --execucao-dir resultados/rodada_YYYYMMDD_HH
 
 Os resultados brutos são gerados em `resultados/`, pasta ignorada pelo Git por conter artefatos grandes e reprodutíveis. A rodada final descrita no artigo é identificada como `rodada_20260624_040601`.
 
-Os gráficos finais usados no artigo foram versionados em `figuras/`:
+As figuras usadas no artigo foram versionadas em `figuras/`:
 
+- `figuras/fluxo_experimental_ilustrado.png`
+- `figuras/nemotron_amostra_separada.png`
 - `figuras/acuracia_final_por_abordagem.png`
 - `figuras/acuracia_final_por_dataset_abordagem.png`
 - `figuras/oracle_at_3_final.png`
 - `figuras/custo_vs_acuracia_final.png`
 
-O texto principal está em `artigo_sbc_reformatado_v3_expandido.tex`.
+O texto principal está em `artigo_sbc_reformatado_v3_expandido_avaliacoes_academico.tex`.
 
 ## Como citar
 
