@@ -31,11 +31,11 @@ Faculdade de Ciências -- Bauru, SP -- Brasil\\
 \maketitle
 
 \begin{abstract}
-This paper presents an experimental study comparing prompting strategies in a local Small Language Model executed through Ollama. The study evaluates direct answering, Chain-of-Thought, Flow of Reasoning, and a three-trajectory strategy inspired only by the path-diversity intuition associated with GFlowNets, without flow-network training or reward optimization. The evaluation covers GSM8K, ARC-Challenge, Hendrycks MATH/AIME, and TruthfulQA. Answers are standardized with \texttt{RESPOSTA\_FINAL}, stored in auditable JSON/JSONL files, and assessed through deterministic matching, symbolic equivalence, and an external reference-based LLM-as-a-Judge. In the final round, direct answering reached the highest aggregate accuracy among Gemma 4 conditions (85.4\%), while the structured strategies ranged from 82.5\% to 83.3\%. The results do not support an aggregate gain from structured reasoning under the tested configuration, although \oracle{} indicates unused potential in the multi-trajectory selection step. Nemotron Diffusion is reported separately as an exploratory external-model baseline over the same frozen questions.
+This paper presents an experimental study comparing prompting strategies in a local Small Language Model executed through Ollama. The study evaluates direct answering, Chain-of-Thought, Flow of Reasoning, and a three-trajectory strategy inspired only by the path-diversity intuition associated with GFlowNets, without flow-network training or reward optimization. The evaluation covers frozen subsets of GSM8K, ARC-Challenge, Hendrycks MATH/AIME, and TruthfulQA. Unlike large-scale benchmarks that usually evaluate full test splits or substantially larger samples, this study uses 100 instances per dataset due to local-machine constraints and the cost of reference-based LLM-as-a-Judge evaluation. Answers are standardized with \texttt{RESPOSTA\_FINAL}, stored in auditable JSON/JSONL files, and assessed through deterministic matching, symbolic equivalence, and an external reference-based LLM-as-a-Judge. In the final round, direct answering reached the highest aggregate accuracy among Gemma 4 conditions (85.4\%), while the structured strategies ranged from 82.5\% to 83.3\%. The results do not support an aggregate gain from structured reasoning under the tested configuration, although \oracle{} indicates unused potential in the multi-trajectory selection step. Nemotron Diffusion is reported separately as an exploratory external-model baseline over the same frozen questions.
 \end{abstract}
 
 \begin{resumo}
-Este trabalho apresenta um estudo experimental para comparar estratégias de prompting em um Small Language Model local executado via Ollama. O estudo avalia resposta direta, Chain-of-Thought, Flow of Reasoning e uma estratégia multi-trajetória inspirada apenas na intuição de diversidade de caminhos associada a GFlowNets, sem treinamento de rede de fluxo ou otimização por recompensa. A avaliação cobre GSM8K, ARC-Challenge, Hendrycks MATH/AIME e TruthfulQA. As respostas são padronizadas com \texttt{RESPOSTA\_FINAL}, armazenadas em JSON/JSONL auditável e avaliadas por comparação determinística, equivalência simbólica e LLM-juiz externo baseado em referência. Na rodada final, a resposta direta obteve a maior acurácia agregada entre as condições do Gemma 4 (85,4\%), enquanto as estratégias estruturadas variaram entre 82,5\% e 83,3\%. Os resultados não sustentam ganho agregado do raciocínio estruturado sob a configuração testada, embora o \oracle{} indique potencial não aproveitado na etapa de seleção multi-trajetória. O Nemotron Diffusion é reportado separadamente como baseline externo exploratório sobre as mesmas perguntas congeladas.
+Este trabalho apresenta um estudo experimental para comparar estratégias de prompting em um Small Language Model local executado via Ollama. O estudo avalia resposta direta, Chain-of-Thought, Flow of Reasoning e uma estratégia multi-trajetória inspirada apenas na intuição de diversidade de caminhos associada a GFlowNets, sem treinamento de rede de fluxo ou otimização por recompensa. A avaliação cobre subconjuntos congelados de GSM8K, ARC-Challenge, Hendrycks MATH/AIME e TruthfulQA. Diferentemente de benchmarks de larga escala, que em geral avaliam partições completas ou amostras substancialmente maiores, este estudo utiliza 100 instâncias por dataset devido às restrições de máquina local e ao custo de avaliação por LLM-juiz baseado em referência. As respostas são padronizadas com \texttt{RESPOSTA\_FINAL}, armazenadas em JSON/JSONL auditável e avaliadas por comparação determinística, equivalência simbólica e LLM-juiz externo baseado em referência. Na rodada final, a resposta direta obteve a maior acurácia agregada entre as condições do Gemma 4 (85,4\%), enquanto as estratégias estruturadas variaram entre 82,5\% e 83,3\%. Os resultados não sustentam ganho agregado do raciocínio estruturado sob a configuração testada, embora o \oracle{} indique potencial não aproveitado na etapa de seleção multi-trajetória. O Nemotron Diffusion é reportado separadamente como baseline externo exploratório sobre as mesmas perguntas congeladas.
 \end{resumo}
 
 \section{Introdução}
@@ -61,12 +61,12 @@ As perguntas de pesquisa que orientam o trabalho são:
 
 As contribuições do trabalho podem ser resumidas em cinco pontos. Primeiro, apresenta-se um protocolo experimental reprodutível para comparar estratégias de inferência em SLMs locais. Segundo, formaliza-se uma adaptação multi-trajetória com seleção por consenso sem gabarito e cálculo separado de \oracle{}. Terceiro, implementa-se um LLM-as-a-Judge externo com auditoria por ordem reversa e suporte a um segundo juiz. Quarto, combinam-se métricas determinísticas, equivalência simbólica, Truthfulness e Informativeness. Quinto, organizam-se scripts para geração, avaliação humana cega, consolidação estatística com bootstrap e visualização gráfica.
 
-O fluxo experimental selecionou 100 instâncias por dataset, executou o modelo sob cada estratégia, padronizou a saída no marcador \texttt{RESPOSTA\_FINAL}, persistiu arquivos JSON/JSONL, combinou avaliação determinística e LLM como juiz, consolidou métricas e gerou gráficos. A rodada final, identificada como \texttt{rodada\_20260624\_040601}, foi concluída com 400 perguntas congeladas, 2000 respostas oficiais quando se soma Gemma e Nemotron, 2000 avaliações determinísticas e 660 avaliações por LLM-juiz. Este artigo descreve os fundamentos conceituais, a metodologia, o desenvolvimento do pipeline e os resultados quantitativos consolidados dessa rodada.
+O fluxo experimental selecionou 100 instâncias por dataset, executou o modelo sob cada estratégia, padronizou a saída no marcador \texttt{RESPOSTA\_FINAL}, persistiu arquivos JSON/JSONL, combinou avaliação determinística e LLM como juiz, consolidou métricas e gerou gráficos. Essa amostra corresponde a uma fração controlada dos corpora originais: a decisão foi tomada por restrições de processamento local e pelo custo adicional de avaliar respostas abertas com LLM-juiz, especialmente em TruthfulQA e em casos nos quais o matching determinístico não era suficiente. A rodada final, identificada como \texttt{rodada\_final}, foi concluída com 400 perguntas congeladas, 2000 respostas oficiais quando se soma Gemma e Nemotron, 2000 avaliações determinísticas e 660 avaliações por LLM-juiz. Este artigo descreve os fundamentos conceituais, a metodologia, o desenvolvimento do pipeline e os resultados quantitativos consolidados dessa rodada.
 
 
 \section{Trabalhos Relacionados}
 
-A fundamentação deste trabalho cruza quatro linhas de pesquisa: estratégias de prompting para raciocínio, avaliação comparativa de SLMs, inferência multi-trajetória e avaliação automatizada por LLM-juiz. Essa organização é importante porque o objetivo do experimento não é apenas medir se um modelo local responde corretamente, mas verificar se diferentes formas de conduzir o mesmo SLM alteram acurácia, custo e robustez em tarefas de natureza distinta.
+A fundamentação deste trabalho cruza seis linhas de pesquisa: estratégias de prompting para raciocínio, avaliação comparativa de SLMs, execução local e eficiência, inferência multi-trajetória, modelos de difusão para linguagem e avaliação automatizada por LLM-juiz. Essa organização é importante porque o objetivo do experimento não é apenas medir se um modelo local responde corretamente, mas verificar se diferentes formas de conduzir o mesmo SLM alteram acurácia, custo e robustez em tarefas de natureza distinta.
 
 \subsection{Prompting para Raciocínio Passo a Passo}
 
@@ -78,11 +78,13 @@ Variações posteriores exploram decomposição e planejamento. Least-to-Most Pr
 
 \subsection{Benchmarks Comparativos de SLMs}
 
-A literatura recente também passou a avaliar SLMs como uma categoria própria, em vez de analisá-los apenas como versões menores de LLMs. ThinkSLM \cite{thinkslm2025} avalia dezenas de SLMs em múltiplos benchmarks de raciocínio e discute formas de julgamento, incluindo avaliação baseada em regras, avaliação humana e LLM-as-a-Judge. Esse tipo de estudo mostra que a capacidade de raciocínio em modelos pequenos é heterogênea e depende de família de modelo, forma de treinamento, compressão e tipo de tarefa.
+A literatura recente passou a avaliar SLMs como uma categoria própria, e não apenas como versões reduzidas de LLMs. ThinkSLM \cite{thinkslm2025} avalia SLMs de múltiplas famílias em benchmarks de raciocínio e discute critérios de julgamento, incluindo avaliação baseada em regras, avaliação humana e LLM-as-a-Judge. Esse tipo de estudo mostra que a capacidade de raciocínio em modelos pequenos é heterogênea e depende de família de modelo, forma de treinamento, compressão e tipo de tarefa.
 
-SLM-Bench \cite{slmbench2025} amplia essa perspectiva ao comparar diferentes SLMs em tarefas de NLP, datasets variados e configurações de hardware, incorporando métricas de desempenho, computação e consumo. Essa ênfase em eficiência é particularmente relevante para execução local: um modelo ou estratégia não deve ser avaliado apenas pela acurácia, mas também pelo custo de inferência, latência e viabilidade operacional.
+SLM-Bench \cite{slmbench2025} amplia essa perspectiva ao comparar SLMs em tarefas de NLP, datasets variados e configurações de hardware, incorporando métricas de desempenho, computação e consumo. Essa ênfase em eficiência é particularmente relevante para execução local: um modelo ou estratégia não deve ser avaliado apenas pela acurácia, mas também pelo custo de inferência, pela latência e pela viabilidade operacional.
 
-O presente trabalho é complementar a esses benchmarks. Enquanto ThinkSLM e SLM-Bench buscam responder quais SLMs apresentam melhor desempenho em conjuntos amplos de tarefas, este artigo fixa um único SLM local e pergunta qual estratégia de prompting compensa dentro desse mesmo modelo. Essa distinção reduz variáveis de confusão: diferenças de arquitetura, tamanho e treinamento são removidas, permitindo observar com mais clareza o efeito de \texttt{base}, \texttt{cot}, \texttt{for} e \texttt{gflow} sobre a mesma base experimental.
+Lu et al. \cite{lu2024slmsurvey} também discutem SLMs a partir de arquitetura, dados de treinamento, capacidade em diferentes domínios, latência e memória. Em uma direção aplicada, Xu et al. \cite{xu2025news} comparam SLMs em sumarização de notícias e observam que modelos pequenos podem ser competitivos em cenários restritos, mas que prompts excessivamente complexos nem sempre melhoram a qualidade. Esse ponto dialoga diretamente com os resultados deste artigo: a resposta direta do Gemma superou as estratégias estruturadas no agregado, indicando que maior estrutura textual não é, por si só, garantia de melhor desempenho em SLMs.
+
+O presente trabalho é complementar a esses benchmarks. Enquanto ThinkSLM, SLM-Bench e estudos de sumarização buscam responder quais SLMs apresentam melhor desempenho em conjuntos amplos de tarefas, frequentemente usando partições completas, muitos modelos e amostras substancialmente maiores, este artigo fixa um único SLM local e pergunta qual estratégia de prompting compensa dentro desse mesmo modelo. Essa distinção reduz variáveis de confusão: diferenças de arquitetura, tamanho e treinamento são minimizadas, permitindo observar com mais clareza o efeito de \texttt{base}, \texttt{cot}, \texttt{for} e \texttt{gflow} sobre a mesma base experimental. Por outro lado, a abrangência estatística é menor: os resultados devem ser lidos como uma comparação controlada de estratégias em uma amostra congelada de 100 itens por dataset, e não como um ranking absoluto de SLMs nos benchmarks completos.
 
 \subsection{SLMs, Execução Local e Transferência de Raciocínio}
 
@@ -100,11 +102,19 @@ Tree of Thoughts \cite{yao2023tot} generaliza o CoT linear ao permitir exploraç
 
 Na implementação avaliada, \texttt{gflow} gera três trajetórias independentes com papéis distintos: formal, heurística e contraprova/por casos. As respostas finais normalizadas são combinadas por voto majoritário e prioridade fixa em caso de empate. Além da resposta oficial, as três trajetórias são preservadas para o cálculo de \oracle{}, que mede se alguma trajetória continha uma resposta correta mesmo quando o consenso final falhou. Dessa forma, o experimento diferencia duas questões: capacidade de gerar uma resposta correta em alguma trajetória e capacidade de selecionar corretamente a resposta final.
 
+\subsection{Modelos de Difusão para Linguagem e Nemotron Diffusion}
+
+A maior parte dos modelos de linguagem contemporâneos é autorregressiva: a geração ocorre token a token, da esquerda para a direita, e cada novo token passa a condicionar a continuação da saída. Modelos de difusão, popularizados inicialmente em domínios contínuos como imagem, seguem outra intuição: gerar uma saída a partir de um processo iterativo de refinamento. Em linguagem natural, entretanto, essa transposição é menos direta, pois o texto é composto por tokens discretos, altamente dependentes da ordem e da coerência semântica global. Por isso, modelos de difusão para linguagem trabalham com mecanismos de denoising discreto, geração em blocos ou refinamento iterativo de sequências de tokens \cite{yu2025discretediffusion,ye2025dream}.
+
+O Nemotron-Labs-Diffusion foi incluído neste estudo por representar uma família recente que combina modos de geração distintos. Diferentemente de um modelo puramente autorregressivo, a família Nemotron-Labs-Diffusion é descrita como \textit{tri-mode}: pode operar em modo autorregressivo, em modo de difusão com geração paralela/refinamento de blocos, e em modo de autoespeculação, no qual a difusão é usada para rascunhar tokens e a decodificação autorregressiva verifica a sequência \cite{nemotronlabsdiffusion2026}. Assim, sua inclusão não teve como objetivo competir diretamente com as estratégias de prompting do Gemma, mas observar como um baseline externo, de paradigma arquitetural/de decodificação diferente, se comporta sobre a mesma amostra congelada.
+
+Essa distinção é metodologicamente importante. O Nemotron não é uma quinta estratégia de prompting aplicada ao Gemma, nem seus resultados devem ser usados para afirmar superioridade ou inferioridade universal de modelos de difusão para texto. Ele funciona como braço exploratório: recebe as mesmas perguntas, é avaliado pelos mesmos critérios e permite verificar se uma abordagem com geração/refinamento paralelo apresenta comportamento diferente nos mesmos benchmarks. Como a rodada reportada executou o modelo por backend distinto e sem calibração específica para modo de decodificação, seus resultados são interpretados com cautela e separados da comparação principal entre \texttt{base}, \texttt{cot}, \texttt{for} e \texttt{gflow}.
+
 \subsection{Avaliação Automatizada e LLM-as-a-Judge}
 
 A avaliação de respostas abertas é um gargalo metodológico. Em múltipla escolha, a letra correta costuma bastar; em matemática, é necessário extrair e normalizar respostas finais; em TruthfulQA, respostas semanticamente corretas podem não repetir o gabarito. O paradigma LLM-as-a-Judge, discutido por Zheng et al. \cite{zheng2023}, propõe usar um modelo avaliador para julgar respostas produzidas por outro modelo, especialmente em cenários nos quais avaliação humana completa é custosa.
 
-Esse paradigma exige controle de vieses. Zheng et al. \cite{zheng2023} e Zhu et al. \cite{zhu2023} discutem limitações como viés de posição, preferência por respostas longas e sensibilidade ao estilo. Shi et al. \cite{shi2024position} aprofundam especificamente o problema de viés posicional em julgamentos por LLM. Por isso, o protocolo deste trabalho separa modelo avaliado e modelo avaliador, registra o juiz no manifesto da rodada e executa auditoria de ordem normal e invertida.
+Esse paradigma exige controle de vieses. Zheng et al. \cite{zheng2023} e Zhu et al. \cite{zhu2023} discutem limitações como viés de posição, preferência por respostas longas e sensibilidade ao estilo. Shi et al. \cite{shi2024position} aprofundam especificamente o problema de viés posicional em julgamentos por LLM. Mais recentemente, SLMJury \cite{slmjury2026} mostra que modelos menores também podem atuar como juízes em certos cenários, mas que a confiabilidade varia por família, tarefa e orçamento de julgamento. Esses trabalhos reforçam a necessidade de separar modelo gerador e modelo avaliador, registrar artefatos e auditar estabilidade do julgamento.
 
 No experimento final, o juiz primário foi \texttt{deepseek/deepseek-v4-flash}, acionado apenas quando a avaliação determinística ou semântica simples não era suficiente. O juiz recebe pergunta, gabarito, resposta final extraída, resposta completa e, quando disponível, listas de respostas corretas e incorretas. A saída é padronizada em JSON com veredito, pontuação, tipo de erro, justificativa e confiança. Além disso, Agreement, Cohen's Kappa e Position Bias Rate são usados para verificar estabilidade do julgamento.
 
@@ -112,7 +122,9 @@ No experimento final, o juiz primário foi \texttt{deepseek/deepseek-v4-flash}, 
 
 Os trabalhos revisados mostram que CoT, decomposição, planejamento e múltiplas trajetórias podem melhorar desempenho em diferentes contextos, especialmente em LLMs maiores ou em tarefas específicas. Também mostram que SLMs devem ser avaliados de forma própria, considerando eficiência e restrições de execução local. Ainda assim, permanece uma lacuna prática: para um mesmo SLM local, executado sob o mesmo hardware e avaliado nos mesmos datasets, permanece empiricamente incerto se estratégias estruturadas compensam a resposta direta.
 
-Este artigo ocupa essa lacuna ao comparar quatro estratégias de prompting no mesmo modelo local, com datasets congelados, avaliação determinística quando possível, LLM-juiz externo quando necessário, auditoria posicional, métricas de custo e análise de \oracle{}. O objetivo, portanto, não é propor um novo benchmark multi-modelo, mas produzir uma comparação controlada de estratégias de inferência aplicáveis a SLMs locais.
+Este artigo ocupa essa lacuna ao comparar quatro estratégias de prompting no mesmo modelo local, com datasets congelados, avaliação determinística quando possível, LLM-juiz externo quando necessário, auditoria posicional, métricas de custo e análise de \oracle{}. A contribuição em relação aos trabalhos comparativos é, portanto, mais controlada que abrangente: em vez de ranquear muitos modelos, isola-se o efeito de estratégias de inferência sobre um mesmo modelo. Também se assume explicitamente uma diferença de escala: enquanto benchmarks comparativos tendem a usar partições completas ou amostras maiores para estimar desempenho geral, este estudo usa uma fração dos datasets por limitação de recursos computacionais e pelo custo de acionar julgamento semântico externo. O resultado final se aproxima das conclusões recentes de que SLMs apresentam forte dependência de domínio e de configuração: prompts mais elaborados, múltiplas trajetórias e arquiteturas alternativas podem ser úteis, mas precisam demonstrar ganho operacional diante de custo, estabilidade e confiabilidade de seleção.
+
+
 
 \section{Metodologia}
 
@@ -126,13 +138,15 @@ A concorrência da rodada final foi limitada a 16 tarefas ativas e quatro chamad
 
 \subsubsection{Baseline externo com Nemotron Diffusion}
 
-O Gemma 4 permanece como o modelo alvo para a compara\c{c}\~ao entre \texttt{base}, \texttt{cot}, \texttt{for} e \texttt{gflow}. Como extens\~ao do protocolo, o \texttt{nvidia/Nemotron-Labs-Diffusion-3B} foi inclu\'ido como \emph{baseline} de outro modelo, executando somente a condi\c{c}\~ao \texttt{base}. Logo, ele n\~ao \'{e} interpretado como uma quinta estrat\'egia de prompting do Gemma: a compara\c{c}\~ao entre modelos \'{e} reportada separadamente e de forma pareada.
+O Gemma 4 permanece como o modelo alvo para a compara\c{c}\~ao entre \texttt{base}, \texttt{cot}, \texttt{for} e \texttt{gflow}. Como extens\~ao do protocolo, o \texttt{nvidia/Nemotron-Labs-Diffusion-3B} foi inclu\'ido como \emph{baseline} externo de outro modelo, executando somente a condi\c{c}\~ao \texttt{base}. Logo, ele n\~ao \'{e} interpretado como uma quinta estrat\'egia de prompting do Gemma: a compara\c{c}\~ao principal permanece intramodelo, enquanto a compara\c{c}\~ao com Nemotron \'{e} reportada separadamente e de forma pareada.
 
-Ap\'os a gera\c{c}\~ao principal, a rodada persiste \texttt{perguntas\_amostradas.json} e \texttt{referencias\_amostradas.json}. O primeiro arquivo cont\'em apenas perguntas e metadados de amostragem; o segundo conserva os gabaritos para registro e avalia\c{c}\~ao. O processo do Nemotron carrega o modelo uma \'unica vez e responde a toda a amostra sequencialmente. Na rodada reportada, ele foi executado por um caminho PyTorch/Transformers separado do Ollama; por isso, suas medidas de tempo, throughput e comprimento de saída não devem ser interpretadas como compara\c{c}\~ao direta de efici\^encia arquitetural.
+A justificativa para essa inclus\~ao \'{e} metodol\'ogica. Enquanto o Gemma representa o cen\'ario autorregressivo local avaliado sob diferentes prompts, o Nemotron-Labs-Diffusion representa uma linha recente de modelos que combina decodifica\c{c}\~ao autorregressiva, difus\~ao discreta e autoespecula\c{c}\~ao \cite{nemotronlabsdiffusion2026}. Em termos conceituais, o interesse n\~ao est\'a apenas em comparar nomes de modelos, mas em verificar se um paradigma com gera\c{c}\~ao/refinamento paralelo de tokens apresenta comportamento diferente quando submetido \`as mesmas perguntas congeladas. Essa escolha tamb\'em torna o estudo mais informativo para trabalhos futuros, pois separa duas dimens\~oes: o efeito de prompting dentro do Gemma e o efeito explorat\'orio de um backend/modelo alternativo.
+
+Ap\'os a gera\c{c}\~ao principal, a rodada persiste \texttt{perguntas\_amostradas.json} e \texttt{referencias\_amostradas.json}. O primeiro arquivo cont\'em apenas perguntas e metadados de amostragem; o segundo conserva os gabaritos para registro e avalia\c{c}\~ao. O processo do Nemotron carrega o modelo uma \'unica vez e responde a toda a amostra sequencialmente. Na rodada reportada, ele foi executado por um caminho PyTorch/Transformers separado do Ollama; por isso, suas medidas de tempo, throughput e comprimento de sa\'ida n\~ao devem ser interpretadas como compara\c{c}\~ao direta de efici\^encia arquitetural. Al\'em disso, como n\~ao houve calibra\c{c}\~ao espec\'ifica de modo de decodifica\c{c}\~ao, tamanho de bloco, passos de refinamento ou autoespecula\c{c}\~ao, o resultado do Nemotron deve ser lido como baseline explorat\'orio de corre\c{c}\~ao, e n\~ao como avalia\c{c}\~ao conclusiva da fam\'ilia Nemotron ou de modelos de difus\~ao para linguagem.
 
 \subsection{Datasets}
 
-O protocolo utiliza 100 perguntas por dataset na rodada final. A seleção é pseudoaleatória e reproduzível por seed. Quando o dataset oferece categorias, tipos ou subconjuntos, a amostragem é estratificada; os índices originais e a seed são persistidos no manifesto da rodada.
+O protocolo utiliza 100 perguntas por dataset na rodada final. A seleção é pseudoaleatória e reproduzível por seed. Quando o dataset oferece categorias, tipos ou subconjuntos, a amostragem é estratificada; os índices originais e a seed são persistidos no manifesto da rodada. A opção por 100 instâncias por dataset não pretende substituir a avaliação em corpus completo. Ela foi adotada para viabilizar a execução local, reduzir tempo de inferência e controlar o custo de avaliação por LLM-juiz, que é especialmente relevante em respostas abertas, julgamentos semânticos e rodadas de auditoria posicional.
 
 Além da rodada principal, o pipeline permite uma continuação objetiva sem TruthfulQA. Essa continuação preserva o mesmo desenho de geração e avaliação, mas executa apenas GSM8K, ARC-Challenge e Hendrycks MATH/AIME. O objetivo é aumentar o número de instâncias avaliadas por critérios determinísticos ou simbólicos, reduzindo o peso relativo do julgamento semântico do LLM-juiz na análise agregada.
 
@@ -295,12 +309,12 @@ Para garantir que a compara\c{c}\~ao entre modelos use exatamente as mesmas inst
 \draw[seta] (perguntas) |- (nemotron);
 \draw[seta] (gemma) -- (respostas);
 \draw[seta] (nemotron) -| (respostas);
-\draw[seta, dashed] (referencias) -| node[pos=0.25, below, font=\scriptsize] {uso somente na avalia\c{c}\~ao} (juiz);
+\draw[seta, dashed] (referencias) -| (juiz);
 \draw[seta] (respostas) -- (juiz);
 \draw[seta] (juiz) -- (metricas);
 \end{tikzpicture}%
 }
-\caption{Esquema do desenho pareado entre estrat\'egias de prompting do Gemma e baseline externo Nemotron. As perguntas s\~ao as mesmas nos dois bra\c{c}os; os gabaritos n\~ao s\~ao apresentados ao gerador.}
+\caption{Esquema do desenho pareado entre estrat\'egias de prompting do Gemma e baseline externo Nemotron. As perguntas s\~ao as mesmas nos dois bra\c{c}os; os gabaritos n\~ao s\~ao apresentados ao gerador. A seta tracejada indica uso das refer\^encias apenas na etapa de avalia\c{c}\~ao.}
 \label{fig:amostra-congelada}
 \end{figure}
 
@@ -362,13 +376,13 @@ Os gráficos incluem Answer Match, Exact Match, equivalência simbólica, Truthf
 
 \section{Resultados da Rodada Final}
 
-Esta seção reporta a rodada final \texttt{rodada\_20260624\_040601}, concluída entre 24 e 25 de junho de 2026. A amostra contém 100 instâncias por dataset, totalizando 400 perguntas congeladas. O Gemma 4 foi executado nas quatro estratégias, produzindo 1600 respostas oficiais; o Nemotron Diffusion respondeu às mesmas 400 perguntas apenas na condição \texttt{base}. Assim, a análise consolida 2000 respostas. Não houve interrupções no processo de geração das respostas. Entretanto, uma parcela dos registros submetidos à etapa de julgamento não recebeu veredito binário válido; esses casos foram preservados nos artefatos de auditoria e excluídos do denominador de acurácia, conforme o critério definido na Seção de Avaliação.
+A amostra contém 100 instâncias por dataset, totalizando 400 perguntas congeladas. O Gemma 4 foi executado nas quatro estratégias, produzindo 1600 respostas oficiais; o Nemotron Diffusion respondeu às mesmas 400 perguntas apenas na condição \texttt{base}. Assim, a análise consolida 2000 respostas. Não houve interrupções no processo de geração das respostas. Entretanto, uma parcela dos registros submetidos à etapa de julgamento não recebeu veredito binário válido; esses casos foram preservados nos artefatos de auditoria e excluídos do denominador de acurácia, conforme o critério definido na Seção de Avaliação.
 
 O processamento final registrou 2000 tentativas de avaliação determinística, 660 chamadas ao LLM-juiz, 5000 iterações de bootstrap e seed \texttt{20260612}. O juiz externo foi acionado apenas quando o matching determinístico ou simbólico não produziu veredito conclusivo, ou quando o dataset exigia avaliação semântica, como em TruthfulQA. Para as estratégias do Gemma, 371 respostas por abordagem receberam veredito válido; para o Nemotron, 398 respostas receberam veredito válido. A Tabela~\ref{tab:resultado-final-agregado} resume o resultado agregado.
 
 \noindent\textit{Nota metodológica.} A auditoria dos artefatos da rodada identificou registros sem veredito válido concentrados em um subconjunto restrito de grupos de perguntas. Esses casos decorreram de inconclusões do avaliador automático, como falhas de resposta do serviço externo ou saídas em formato JSON inválido. Como medida conservadora, tais registros não foram imputados como acertos nem como erros. Em Hendrycks MATH/AIME, também foram observadas saídas longas e respostas sem o marcador \texttt{RESPOSTA\_FINAL}, indicando que parte da dificuldade do dataset está associada ao limite de geração e à extração da resposta final. Esses eventos são tratados como limitação operacional da configuração experimental e retomados nas ameaças à validade.
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{3pt}
@@ -388,7 +402,7 @@ Nemotron Diffusion / \texttt{base} & 398 & 158 & 39,7\% & [34,7\%; 44,5\%] & 400
 \end{tabular}
 \end{table}
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{4pt}
@@ -413,42 +427,48 @@ Nemotron Diffusion / \texttt{base} & 398 & 158 & 39,7\% & [34,7\%; 44,5\%] & 400
 
 O principal resultado é negativo para a hipótese de superioridade geral das estratégias estruturadas: na agregação final, a linha de base direta do Gemma obteve a maior acurácia. O CoT ficou 2,15 pontos percentuais abaixo da base; o FoR, 2,42 pontos abaixo; e o \texttt{gflow}, 2,96 pontos abaixo. A Tabela~\ref{tab:sensibilidade-inconclusivos} mostra que essa conclusão não depende apenas da remoção dos casos inconclusivos do denominador. Como as estratégias foram aplicadas às mesmas instâncias, a comparação pareada é mais informativa que a diferença agregada bruta. Nessa análise, nenhuma estratégia estruturada apresentou ganho estatisticamente robusto sobre a linha de base após correção de Holm.
 
+A leitura desses resultados em relação à literatura deve ser feita com cautela. Trabalhos como ThinkSLM e SLM-Bench avaliam SLMs em escala mais ampla, com múltiplas famílias de modelos, maior variedade de tarefas e, em muitos casos, partições completas ou amostras maiores dos benchmarks. O presente estudo, ao contrário, usa os mesmos tipos de datasets como referência experimental, mas seleciona uma fração controlada de 100 itens por dataset. Essa escolha limita a comparação direta de percentuais absolutos com a literatura, mas preserva a validade da comparação interna: todas as estratégias do Gemma responderam exatamente às mesmas perguntas, sob os mesmos parâmetros e com o mesmo procedimento de avaliação. Assim, o resultado mais importante não é afirmar que o Gemma atinge determinado patamar absoluto nos benchmarks completos, mas mostrar que, nesta amostra pareada, aumentar a estrutura do prompt não superou a resposta direta.
 
-\begin{figure}[ht]
+Esse achado também dialoga com Xu et al. \cite{xu2025news}, que observam que prompts mais complexos nem sempre beneficiam SLMs em tarefas aplicadas. Na rodada aqui reportada, a estrutura adicional de CoT e FoR e a diversidade de \texttt{gflow} não produziram ganho agregado, apesar de terem preservado ou melhorado resultados locais em alguns domínios. A interpretação mais consistente com a Seção de Trabalhos Relacionados é que estratégias de raciocínio em SLMs precisam ser calibradas por domínio, custo e risco de seleção, em vez de assumidas como melhoria universal.
+
+
+\begin{figure}[H]
 \centering
+% Submissao: incluir este PNG junto ao .tex.
 \includegraphics[width=0.92\textwidth]{figuras/delta_vs_base_gemma_limpo.png}
 \caption{Delta de acur\'acia das estrat\'egias estruturadas contra a linha de base do Gemma. Valores positivos indicam ganho sobre \texttt{base}; valores negativos indicam perda.}
 \label{fig:delta-base-final}
 \end{figure}
 
+\FloatBarrier
 \subsection{Resultados por Dataset}
 
-A Tabela~\ref{tab:resultado-final-dataset} mostra que o efeito das estratégias varia por domínio. Em ARC-Challenge, o desempenho do Gemma ficou próximo do teto para todas as estratégias, com pequena vantagem da linha de base. Em GSM8K, CoT obteve o único ganho positivo observado contra a base, mas de apenas um ponto percentual. Em Hendrycks MATH/AIME, as três estratégias estruturadas ficaram abaixo da resposta direta. Em TruthfulQA, \texttt{base} e FoR empataram em acurácia, mas FoR obteve a maior Informativeness entre as estratégias do Gemma.
+A Tabela~\ref{tab:resultado-final-dataset} mostra que o efeito das estratégias varia por domínio. Em ARC-Challenge, o desempenho do Gemma ficou próximo do teto para todas as estratégias, com pequena vantagem da linha de base. Em GSM8K, CoT obteve o único ganho positivo observado contra a base, mas de apenas um ponto percentual. Em Hendrycks MATH/AIME, as três estratégias estruturadas ficaram abaixo da resposta direta. Em TruthfulQA, \texttt{base} e FoR empataram em acurácia, mas essa linha deve ser lida com atenção: para Gemma, as porcentagens foram calculadas sobre 72 vereditos válidos de 100 perguntas, e não sobre a amostra integral. Ainda assim, FoR obteve a maior Informativeness entre as estratégias do Gemma.
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{3pt}
 \renewcommand{\arraystretch}{1.15}
-\caption{Acurácia por dataset na rodada final. Valores em porcentagem.}
+\caption{Acurácia por dataset na rodada final. Valores em porcentagem e denominador efetivo.}
 \label{tab:resultado-final-dataset}
-\begin{tabular}{|p{3.0cm}|c|c|c|c|c|}
+\begin{tabular}{|p{2.7cm}|c|c|c|c|c|c|}
 \hline
-\textbf{Dataset} & \textbf{G-base} & \textbf{G-CoT} & \textbf{G-FoR} & \textbf{G-\texttt{gflow}} & \textbf{N-base} \\
+\textbf{Dataset} & \textbf{\(n\) G/N} & \textbf{G-base} & \textbf{G-CoT} & \textbf{G-FoR} & \textbf{G-\texttt{gflow}} & \textbf{N-base} \\
 \hline
-ARC-Challenge & \textbf{97,0} & 96,0 & 96,0 & 95,0 & 83,0 \\
-GSM8K & 92,0 & \textbf{93,0} & 91,0 & 92,0 & 19,0 \\
-Hendrycks MATH/AIME & \textbf{81,8} & 75,8 & 74,7 & 76,8 & 12,1 \\
-TruthfulQA & \textbf{65,3} & 62,5 & \textbf{65,3} & 59,7 & 44,4 \\
+ARC-Challenge & 100/100 & \textbf{97,0} & 96,0 & 96,0 & 95,0 & 83,0 \\
+GSM8K & 100/100 & 92,0 & \textbf{93,0} & 91,0 & 92,0 & 19,0 \\
+Hendrycks MATH/AIME & 99/99 & \textbf{81,8} & 75,8 & 74,7 & 76,8 & 12,1 \\
+TruthfulQA & \textbf{72/99} & \textbf{65,3} & 62,5 & \textbf{65,3} & 59,7 & 44,4 \\
 \hline
 \end{tabular}
 \par\vspace{0.4em}
 \begin{minipage}{0.95\textwidth}
-\footnotesize\textit{Nota:} As porcentagens por dataset foram calculadas apenas sobre respostas com veredito válido. Para Gemma, \(n\) válido por abordagem foi ARC=100, GSM8K=100, Hendrycks MATH/AIME=99 e TruthfulQA=72; para Nemotron, \(n=100\), \(100\), \(99\) e \(99\), respectivamente. Casos inconclusivos do avaliador foram mantidos fora do denominador, razão pela qual alguns valores não correspondem exatamente a múltiplos de 1 ponto percentual.
+\footnotesize\textit{Nota:} A coluna \(n\) G/N indica o denominador válido para Gemma e Nemotron, respectivamente. Para Gemma, o \(n\) é o mesmo nas quatro estratégias. Casos inconclusivos do avaliador foram mantidos fora do denominador; por isso, em TruthfulQA, 65,3\% para G-base corresponde a 47 acertos em 72 vereditos válidos, não a 65 acertos em 100 perguntas.
 \end{minipage}
 \end{table}
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{5pt}
@@ -469,33 +489,34 @@ TruthfulQA & \textbf{65,3} & 62,5 & \textbf{65,3} & 59,7 & 44,4 \\
 
 Os testes Win/Tie/Loss reforçam essa leitura. Em ARC-Challenge, as comparações contra a base tiveram 95\% ou mais de empates. Em GSM8K, CoT venceu uma instância adicional e não perdeu nenhuma, mas o teste de McNemar permaneceu inconclusivo. Em Hendrycks MATH/AIME, FoR teve perda pareada de 7,07 pontos percentuais contra a base; ainda assim, após correção de Holm, a diferença não atingiu evidência estatística robusta. Em TruthfulQA, FoR empatou com a base, enquanto CoT e \texttt{gflow} ficaram abaixo. A Tabela~\ref{tab:micro-macro} adiciona uma leitura por macro-average, na qual cada dataset recebe o mesmo peso; a ordenação agregada continua favorecendo a resposta direta.
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.98\textwidth]{figuras/acuracia_final_por_dataset_abordagem.png}
 \caption{Acurácia por dataset e condição. A figura evidencia que a comparação agregada esconde comportamentos distintos por domínio.}
 \label{fig:acuracia-final-dataset}
 \end{figure}
 
+\FloatBarrier
 \subsection{Multi-trajetória e \oracle{}}
 
-A estratégia \texttt{gflow} apresentou o maior custo computacional relativo entre as abordagens do Gemma, pois exige três chamadas ao SLM por instância. Sua acurácia oficial, contudo, foi inferior à linha de base agregada. O diagnóstico \oracle{} mostra que ao menos uma das três trajetórias frequentemente continha uma resposta correta, mas o consenso determinístico nem sempre selecionou essa alternativa. Portanto, os resultados sugerem que a limitação principal está no mecanismo de seleção das trajetórias, e não apenas na capacidade de gerar candidatos diversos.
+A estratégia \texttt{gflow} apresentou o maior custo computacional relativo entre as abordagens do Gemma, pois exige três chamadas ao SLM por instância. Sua acurácia oficial, contudo, foi inferior à linha de base agregada. A Tabela~\ref{tab:oracle-final} explicita os valores de \oracle{} por dataset: ao menos uma das três trajetórias frequentemente continha uma resposta correta, mas o consenso determinístico nem sempre selecionou essa alternativa. Portanto, os resultados sugerem que a limitação principal está no mecanismo de seleção das trajetórias, e não apenas na capacidade de gerar candidatos diversos.
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.15}
 \caption{Acurácia oficial de \texttt{gflow} e teto diagnóstico \oracle{}.}
 \label{tab:oracle-final}
-\begin{tabular}{|p{3.6cm}|c|c|c|}
+\begin{tabular}{|p{3.4cm}|c|c|c|c|}
 \hline
-\textbf{Dataset} & \textbf{Acurácia oficial} & \textbf{\oracle{}} & \textbf{Diferença} \\
+\textbf{Dataset} & \textbf{\(n\)} & \textbf{Acurácia oficial} & \textbf{\oracle{}} & \textbf{Diferença} \\
 \hline
-ARC-Challenge & 95,0\% & 99,0\% & +4,0 p.p. \\
-GSM8K & 92,0\% & 93,0\% & +1,0 p.p. \\
-Hendrycks MATH/AIME & 76,8\% & 79,8\% & +3,0 p.p. \\
-TruthfulQA & 59,7\% & 66,7\% & +6,9 p.p. \\
-Agregado & 82,5\% & 86,0\% & +3,5 p.p. \\
+ARC-Challenge & 100 & 95,0\% & 99,0\% & +4,0 p.p. \\
+GSM8K & 100 & 92,0\% & 93,0\% & +1,0 p.p. \\
+Hendrycks MATH/AIME & 99 & 76,8\% & 79,8\% & +3,0 p.p. \\
+TruthfulQA & 72 & 59,7\% & 66,7\% & +6,9 p.p. \\
+Agregado & 371 & 82,5\% & 86,0\% & +3,5 p.p. \\
 \hline
 \end{tabular}
 \end{table}
@@ -503,18 +524,19 @@ Agregado & 82,5\% & 86,0\% & +3,5 p.p. \\
 Essa diferença é metodologicamente relevante. Se \texttt{gflow} fosse avaliado pelo melhor dos três caminhos, seu desempenho se aproximaria ou superaria a base agregada. Porém, esse cenário seria oracular, pois exigiria saber qual trajetória está correta. Na condição operacional real, a seleção por consenso não apresentou evidência empírica suficiente para compensar o aumento de custo sob a configuração avaliada.
 
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.82\textwidth]{figuras/oracle_gap_gflow.png}
 \caption{Gap entre \oracle{} e a acur\'acia oficial da estrat\'egia \texttt{gflow}. O gr\'afico evidencia o potencial perdido na etapa de sele\c{c}\~ao das trajet\'orias.}
 \label{fig:oracle-final}
 \end{figure}
 
+\FloatBarrier
 \subsection{Comparação com Nemotron Diffusion}
 
-O Nemotron Diffusion foi incluído como baseline externo de modelo, não como uma quinta estratégia de prompting do Gemma. A comparação usa as mesmas perguntas congeladas, mas deve ser lida como comparação de correção sob condições de execução distintas. Em todos os datasets, o baseline Gemma superou o baseline Nemotron.
+O Nemotron Diffusion foi incluído como baseline externo de modelo, não como uma quinta estratégia de prompting do Gemma. A comparação usa as mesmas perguntas congeladas, mas deve ser lida como comparação de correção sob condições de execução distintas. A motivação para incluí-lo é avaliar, ainda que de forma exploratória, um modelo associado a uma abordagem de geração diferente da decodificação autorregressiva convencional. Modelos de difusão para linguagem buscam gerar ou refinar múltiplos tokens por etapas, em vez de depender exclusivamente da emissão sequencial token a token; em contrapartida, essa família exige escolhas específicas de decodificação, orçamento de refinamento e integração com o backend. Em todos os datasets desta rodada, o baseline Gemma superou o baseline Nemotron.
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{4pt}
@@ -536,13 +558,14 @@ TruthfulQA & 65,3\% & 44,4\% & 72 & -23,6 p.p. & \(0{,}001514\) \\
 \footnotesize\textit{Nota:} As colunas de acurácia usam os vereditos válidos marginais de cada modelo. Já \(\Delta\) N--G e \(p\) Holm são calculados somente nas instâncias pareadas em que Gemma e Nemotron receberam veredito válido; por isso, o delta pode não coincidir exatamente com a subtração direta das duas porcentagens marginais.
 \end{table}
 
-O resultado mais distante ocorreu em GSM8K e Hendrycks MATH/AIME, sugerindo fragilidade do Nemotron nesta configuração para tarefas quantitativas e simbólicas. Em TruthfulQA, a diferença foi menor, mas ainda desfavorável. Como o Nemotron gerou respostas muito mais curtas e foi executado por backend distinto, os números de duração e throughput são mantidos como telemetria, mas não sustentam uma comparação de eficiência entre arquiteturas.
+O resultado mais distante ocorreu em GSM8K e Hendrycks MATH/AIME, sugerindo fragilidade do Nemotron nesta configuração para tarefas quantitativas e simbólicas. Em TruthfulQA, a diferença foi menor, mas ainda desfavorável. Essa evidência não deve ser interpretada como uma rejeição geral de modelos de difusão para texto, pois a comparação foi realizada com um único modelo, em condição \texttt{base}, sem calibração específica do modo de decodificação e em backend distinto. A leitura mais adequada é operacional: sob os parâmetros e prompts empregados nesta rodada, o Gemma local apresentou maior correção, enquanto o Nemotron atuou como baseline externo exploratório. Como o Nemotron gerou respostas muito mais curtas e foi executado por backend distinto, os números de duração e throughput são mantidos como telemetria, mas não sustentam uma comparação de eficiência entre arquiteturas.
 
+\FloatBarrier
 \subsection{Confiabilidade do Juiz}
 
 A auditoria posicional comparou julgamentos em ordem original e ordem inversa. No agregado, foram 530 pares comparáveis, com 96,42\% de concordância, Cohen's Kappa de 0,928 e Position Bias Rate de 3,58\%. A maior taxa por célula do Gemma apareceu em TruthfulQA, chegando a 7,14\% na linha de base. Esses valores sugerem estabilidade razoável do juiz externo, mas não eliminam a necessidade de revisão humana em casos semânticos.
 
-\begin{table}[ht]
+\begin{table}[H]
 \centering
 \small
 \caption{Auditoria global do LLM-juiz por ordem reversa.}
@@ -555,14 +578,37 @@ Pares comparáveis & 530 \\
 Agreement & 96,42\% \\
 Cohen's Kappa & 0,928 \\
 Position Bias Rate & 3,58\% \\
-Avaliações humanas preenchidas & 0 \\
 \hline
 \end{tabular}
 \end{table}
 
+\FloatBarrier
 \subsection{Eficiência}
 
-Entre as estratégias do Gemma, a linha de base apresentou a melhor acurácia agregada por segundo (0,003515), praticamente empatada com CoT (0,003505). FoR e \texttt{gflow} ficaram abaixo, especialmente porque aumentam o comprimento das respostas e, no caso de \texttt{gflow}, triplicam as chamadas por pergunta. Assim, sob a configuração testada, a estratégia direta é o melhor ponto de equilíbrio entre qualidade e custo. CoT pode ser mantido como alternativa quando a tarefa é aritmética, mas a evidência observada é pequena. FoR e \texttt{gflow} exigem melhorias no prompt, na seleção ou no uso seletivo por tipo de problema antes de serem adotados como padrão.
+Entre as estratégias do Gemma, a linha de base apresentou a melhor acurácia agregada por segundo (0,003515), praticamente empatada com CoT (0,003505). A Tabela~\ref{tab:eficiencia-gemma} organiza os valores de eficiência para tornar a comparação rastreável. FoR e \texttt{gflow} ficaram abaixo, especialmente porque aumentam o comprimento das respostas e, no caso de \texttt{gflow}, triplicam as chamadas por pergunta. Assim, sob a configuração testada, a estratégia direta é o melhor ponto de equilíbrio entre qualidade e custo. CoT pode ser mantido como alternativa quando a tarefa é aritmética, mas a evidência observada é pequena. FoR e \texttt{gflow} exigem melhorias no prompt, na seleção ou no uso seletivo por tipo de problema antes de serem adotados como padrão.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.15}
+\caption{Eficiência agregada das estratégias do Gemma.}
+\label{tab:eficiencia-gemma}
+\begin{tabular}{|p{2.3cm}|c|c|c|c|c|}
+\hline
+\textbf{Condição} & \textbf{Acurácia} & \textbf{Duração média (s)} & \textbf{Chamadas/inst.} & \textbf{Accuracy/s} & \textbf{Ganho/chamada extra} \\
+\hline
+\texttt{base} & \textbf{85,4\%} & 243,06 & 1 & \textbf{0,003515} & -- \\
+\texttt{cot} & 83,3\% & \textbf{237,64} & 1 & 0,003505 & n.a. \\
+\texttt{for} & 83,0\% & 254,07 & 1 & 0,003268 & n.a. \\
+\texttt{gflow} & 82,5\% & 259,96 & 3 & 0,003173 & -1,48 p.p. \\
+\hline
+\end{tabular}
+\par\vspace{0.4em}
+\begin{minipage}{0.95\textwidth}
+\footnotesize\textit{Nota:} \textit{Accuracy/s} corresponde à acurácia agregada dividida pela duração média por resposta oficial. O ganho por chamada extra é reportado apenas para \texttt{gflow}, pois CoT e FoR usam o mesmo número de chamadas da base; no agregado, \texttt{gflow} ficou 2,96 p.p. abaixo da base e usa duas chamadas adicionais por instância.
+\end{minipage}
+\end{table}
 
 
 Como s\'intese, a estrat\'egia \texttt{gflow} apresentou o maior custo computacional relativo, por exigir tr\^es chamadas ao SLM por inst\^ancia. Sob a configura\c{c}\~ao avaliada, esse custo adicional n\~ao apresentou evid\^encia emp\'irica suficiente para compensar a acur\'acia agregada inferior \`a linha de base. As figuras de efici\^encia completas permanecem dispon\'iveis no reposit\'orio como artefatos de an\'alise.
@@ -576,19 +622,40 @@ A segunda ameaça está na presença de registros sem veredito válido. Embora a
 
 A terceira ameaça está na extração da resposta final. Embora o marcador \texttt{RESPOSTA\_FINAL} reduza ambiguidade, o modelo pode descumprir o formato solicitado, incluir texto adicional ou atingir o limite de geração antes de emitir a resposta. Esse comportamento apareceu com mais força em Hendrycks MATH/AIME: 52 registros atingiram \texttt{total\_tokens=4096}, 34 ficaram com \texttt{resposta\_gerada} vazia e 72 não continham o marcador esperado. Por isso, o avaliador também tenta reconhecer variações como \texttt{Final answer} e usa a última linha como fallback. Mesmo assim, erros de parsing podem afetar especialmente respostas matemáticas longas ou com notação complexa.
 
-A quarta ameaça está na generalização dos resultados. A rodada final usa 100 perguntas por dataset e um único SLM local como alvo principal. Essa amostra é suficiente para uma comparação pareada inicial, mas ainda limitada diante da diversidade total de problemas, prompts, seeds e versões de modelos. A amostragem estratificada e os intervalos de confiança por bootstrap reduzem, mas não eliminam, essa limitação.
+A quarta ameaça está na generalização dos resultados. A rodada final usa 100 perguntas por dataset e um único SLM local como alvo principal. Essa amostra é suficiente para uma comparação pareada inicial, mas ainda limitada diante da diversidade total de problemas, prompts, seeds e versões de modelos. Diferentemente de benchmarks de larga escala, que podem executar partições completas ou amostras muito maiores, este estudo opera com uma fração dos corpora por restrições de máquina, tempo de inferência e custo de uso do LLM-juiz. Portanto, os percentuais reportados não devem ser interpretados como desempenho definitivo do modelo nos datasets completos, mas como evidência controlada sobre a comparação relativa entre estratégias na amostra congelada. A amostragem estratificada e os intervalos de confiança por bootstrap reduzem, mas não eliminam, essa limitação.
 
 A quinta ameaça é a contaminação de benchmark. Como GSM8K, ARC-Challenge, MATH e TruthfulQA são datasets públicos, os modelos podem ter visto itens semelhantes durante treinamento. Ainda assim, a comparação relativa entre estratégias permanece útil, pois todas respondem às mesmas instâncias sob o mesmo modelo.
 
 Uma ameaça adicional à comparação entre modelos é a assimetria de infraestrutura e backend. O Gemma foi executado localmente via Ollama, enquanto o Nemotron foi executado por PyTorch/Transformers. A amostra comum torna a comparação de correção informativa, mas latência, throughput, consumo de recursos e comprimento de saída não devem ser tratados como comparação direta de eficiência arquitetural.
 
+
+\section{Trabalhos Futuros}
+
+Como continuidade deste estudo, a primeira direção consiste em ampliar a escala experimental. Embora a amostra congelada de 100 instâncias por dataset tenha permitido uma comparação pareada e reprodutível entre estratégias sob restrições locais de máquina, tempo de inferência e uso do LLM-juiz, estudos relacionados frequentemente avaliam partições completas ou subconjuntos substancialmente maiores dos mesmos benchmarks. Assim, uma extensão natural é executar o protocolo sobre amostras progressivamente maiores, ou sobre os corpora completos quando houver infraestrutura disponível, permitindo estimativas mais estáveis de acurácia, intervalos de confiança mais estreitos e comparação mais direta com benchmarks de larga escala.
+
+Uma segunda direção é expandir o conjunto de modelos avaliados. O presente trabalho concentra a comparação principal no Gemma 4 e utiliza o Nemotron Diffusion como baseline externo exploratório. Trabalhos futuros podem incluir outras famílias de SLMs, como Phi, Qwen, Llama, Mistral, DeepSeek e versões quantizadas, mantendo o mesmo conjunto de perguntas, os mesmos prompts e o mesmo procedimento de avaliação. Essa ampliação permitiria separar melhor três efeitos que, nesta rodada, aparecem parcialmente acoplados: efeito da estratégia de prompting, efeito da família de modelo e efeito do backend de execução.
+
+Outra frente importante é aprimorar a avaliação. A combinação entre avaliação determinística, equivalência simbólica e LLM-juiz tornou o experimento auditável, mas ainda há limitação na validação semântica, especialmente em TruthfulQA. Como trabalho futuro, recomenda-se realizar uma avaliação humana cega sobre uma amostra estratificada das respostas, comparar os julgamentos humanos com o LLM-juiz e reportar medidas de concordância. Além disso, a execução de múltiplos juízes, com desempate ou agregação, pode reduzir a dependência de um único avaliador externo e tornar a análise mais robusta a erros de julgamento, JSON malformado ou viés posicional.
+
+A estratégia multi-trajetória também demanda investigação adicional. O diagnóstico por \oracle{} indicou que parte das trajetórias continha respostas corretas que não foram selecionadas pelo consenso oficial. Portanto, trabalhos futuros devem avaliar seletores não-oraculares mais fortes, como reranking por outro SLM, votação ponderada por confiança, verificação simbólica para problemas matemáticos, seleção baseada em consistência semântica e acionamento seletivo por domínio. Essa linha é particularmente relevante porque o problema observado não está apenas na geração de alternativas, mas na capacidade de escolher a alternativa correta sem acesso ao gabarito.
+
+Também é recomendável estudar calibração por dataset e por tipo de tarefa. Os resultados sugerem que CoT pode ser mais útil em problemas aritméticos simples, enquanto prompts mais longos podem prejudicar tarefas matemáticas formais ou aumentar o risco de truncamento. Uma extensão possível é construir um roteador de estratégias, capaz de decidir entre resposta direta, CoT, FoR ou múltiplas trajetórias com base em características da pergunta, domínio, comprimento esperado da solução e custo aceitável. Essa abordagem pode ser mais adequada do que buscar uma única estratégia universal para todos os benchmarks.
+
+Por fim, a comparação com modelos de difusão para linguagem deve ser aprofundada em condições mais controladas. O Nemotron Diffusion foi útil como baseline conceitual, por representar uma abordagem alternativa ao fluxo autorregressivo tradicional; contudo, sua execução ocorreu em backend distinto e sem exploração sistemática de parâmetros específicos de difusão, autoespeculação ou modos híbridos de decodificação. Trabalhos futuros devem avaliar esses modelos com calibração própria, mensurar throughput, latência, uso de memória, número de tokens por segundo e qualidade final, evitando conclusões gerais a partir de uma única configuração exploratória. Essa análise permitiria verificar se abordagens baseadas em difusão discreta podem oferecer vantagens práticas em geração textual local, especialmente em cenários nos quais paralelismo e eficiência de decodificação sejam relevantes.
+
 \section{Considerações Finais}
 
 Este trabalho consolidou e executou um protocolo reprodutível para comparar estratégias de prompting no Gemma 4 e acrescentou um baseline externo com Nemotron Diffusion sobre a mesma amostra congelada. A separação entre perguntas e referências, a persistência dos manifestos, o matching determinístico, a equivalência simbólica e a auditoria do LLM-juiz tornam o fluxo rastreável e permitem repetir geração, avaliação ou análise sem misturar rodadas.
 
-Em relação à QP1, os resultados desta rodada não sustentam ganho agregado das estratégias estruturadas sobre a resposta direta. A linha de base obteve a maior acurácia global entre as condições do Gemma, enquanto CoT apresentou apenas um ganho local em GSM8K. Assim, a evidência sugere que estratégias de raciocínio podem ter efeito dependente do domínio, mas não produziram melhoria geral sob a configuração testada. Em relação à QP2, a estratégia multi-trajetória não apresentou evidência empírica suficiente para compensar o aumento de chamadas na forma atual: o \oracle{} mostra potencial latente, mas o consenso oficial não selecionou esse potencial de modo confiável. Em relação à QP3, o efeito varia por dataset: CoT teve pequeno ganho em GSM8K, FoR empatou com a base em TruthfulQA, e as estratégias estruturadas perderam em Hendrycks MATH/AIME. Em relação à QP4, a padronização da resposta final e a combinação de avaliação determinística com LLM-juiz tornaram a análise auditável, embora a ausência de avaliação humana ainda limite a força das conclusões semânticas.
+Em relação à QP1, os resultados desta rodada não sustentam ganho agregado das estratégias estruturadas sobre a resposta direta. A linha de base obteve a maior acurácia global entre as condições do Gemma, enquanto CoT apresentou apenas um ganho local em GSM8K. Assim, a evidência sugere que estratégias de raciocínio podem ter efeito dependente do domínio, mas não produziram melhoria geral sob a configuração testada. Esse achado dialoga com benchmarks recentes de SLMs, nos quais desempenho, robustez e eficiência variam fortemente por família, domínio e configuração de avaliação \cite{thinkslm2025,slmbench2025}. Também se aproxima de evidências aplicadas de que prompts mais complexos nem sempre beneficiam SLMs, podendo aumentar verbosidade, custo e instabilidade sem ganho proporcional \cite{xu2025news}. A comparação com esses estudos deve ser interpretada de modo qualitativo e metodológico, pois a rodada aqui reportada usa subconjuntos congelados de 100 instâncias por dataset, enquanto benchmarks comparativos geralmente operam em escala maior.
 
-Como resultado prático, a configuração mais defensável para o Gemma 4 nesta rodada é usar \texttt{base} como padrão geral e reservar CoT para tarefas aritméticas quando o custo de uma resposta mais longa for aceitável. FoR e \texttt{gflow} permanecem promissores como estruturas de pesquisa, mas precisam de seleção mais forte, acionamento seletivo por domínio ou julgamento interno calibrado antes de serem adotados como estratégia padrão. O Nemotron Diffusion, nesta configuração, ficou substancialmente abaixo do Gemma em correção e deve ser tratado apenas como baseline externo exploratório.
+Em relação à QP2, a estratégia multi-trajetória não apresentou evidência empírica suficiente para compensar o aumento de chamadas na forma atual: o \oracle{} mostra potencial latente, mas o consenso oficial não selecionou esse potencial de modo confiável. Esse resultado é intermediário entre a literatura favorável a múltiplas trajetórias e a evidência prática obtida nesta rodada. Assim como em Self-Consistency e Tree of Thoughts, gerar alternativas pode aumentar a chance de conter uma solução correta; contudo, o presente experimento mostra que a etapa de seleção é crítica. Sem um seletor confiável, o ganho potencial permanece oracular e não se converte automaticamente em acurácia operacional.
+
+Em relação à QP3, o efeito varia por dataset: CoT teve pequeno ganho em GSM8K, FoR empatou com a base em TruthfulQA, e as estratégias estruturadas perderam em Hendrycks MATH/AIME. Esse padrão reforça que não há uma estratégia universalmente superior para o SLM avaliado. Em relação à QP4, a padronização da resposta final e a combinação de avaliação determinística com LLM-juiz tornaram a análise auditável, embora a ausência de avaliação humana ainda limite a força das conclusões semânticas. A auditoria por ordem reversa reduz parte do risco de viés posicional, mas não elimina limitações conhecidas do paradigma LLM-as-a-Judge.
+
+O Nemotron Diffusion foi mantido no estudo por uma razão conceitual e metodológica: ele representa uma abordagem de geração diferente, associada a difusão discreta, geração/refinamento paralelo de tokens e modos híbridos de decodificação. Como modelos de difusão foram inicialmente mais difundidos em domínios como imagem, sua adaptação para linguagem é relevante porque o texto exige lidar com tokens discretos, dependência sequencial e coerência semântica. Entretanto, a inclusão do Nemotron não transforma a comparação principal em um ranking de arquiteturas. Na configuração testada, ele ficou substancialmente abaixo do Gemma em correção e deve ser tratado como baseline externo exploratório, não como evidência conclusiva contra modelos de difusão para linguagem.
+
+Como resultado prático, a configuração mais defensável para o Gemma 4 nesta rodada é usar \texttt{base} como padrão geral e reservar CoT para tarefas aritméticas quando o custo de uma resposta mais longa for aceitável. FoR e \texttt{gflow} permanecem promissores como estruturas de pesquisa, mas precisam de seleção mais forte, acionamento seletivo por domínio ou julgamento interno calibrado antes de serem adotados como estratégia padrão. As limitações identificadas e as direções de continuidade foram sistematizadas na seção de trabalhos futuros, especialmente em relação à ampliação da amostra, à revisão humana, à comparação com outras famílias de SLMs e à avaliação mais controlada de modelos de difusão para linguagem.
 
 \begin{thebibliography}{99}
 
@@ -642,6 +709,36 @@ In \textit{Proceedings of the 2025 Conference on Empirical Methods in Natural La
 Pham, N. T., Kieu, T., Nguyen, D.-M., Xuan, S. H., Duong-Trung, N. and Le-Phuoc, D. (2025).
 SLM-Bench: A comprehensive benchmark of small language models on environmental impacts--Extended version.
 \textit{arXiv preprint arXiv:2508.15478}.
+
+\bibitem{lu2024slmsurvey}
+Lu, Z., Li, X., Cai, D., Yi, R., Liu, F., Zhang, X., Lane, N. D. and Xu, M. (2024).
+Small language models: Survey, measurements, and insights.
+\textit{arXiv preprint arXiv:2409.15790}.
+
+\bibitem{xu2025news}
+Xu, B., Chen, Y., Wen, Z., Liu, W. and He, B. (2025).
+Evaluating small language models for news summarization: Implications and factors influencing performance.
+In \textit{Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics}.
+
+\bibitem{slmjury2026}
+Laddha, A., Pradhan, N. and Srivastava, G. (2026).
+SLMJury: Can small language models judge as well as large ones?
+\textit{arXiv preprint arXiv:2606.07810}.
+
+\bibitem{yu2025discretediffusion}
+Yu, R. et al. (2025).
+Discrete diffusion in large language and multimodal models: A survey.
+\textit{arXiv preprint arXiv:2506.13759}.
+
+\bibitem{ye2025dream}
+Ye, J., Xie, Z., Zheng, L., Gao, J., Wu, Z., Jiang, X., Li, Z. and Kong, L. (2025).
+Dream 7B: Diffusion large language models.
+\textit{arXiv preprint arXiv:2508.15487}.
+
+\bibitem{nemotronlabsdiffusion2026}
+NVIDIA. (2026).
+Nemotron-Labs-Diffusion: A tri-mode language model family unifying autoregressive, diffusion, and self-speculation decoding.
+\textit{Hugging Face model card and technical report}.
 
 \bibitem{cobbe2021}
 Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., Hesse, C. and Schulman, J. (2021).
