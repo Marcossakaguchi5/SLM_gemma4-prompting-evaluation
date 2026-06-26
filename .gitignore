@@ -12,7 +12,7 @@ ENV/
 .ruff_cache/
 .coverage
 htmlcov/
-
+/template/*
 # Segredos locais
 .env
 .env.*

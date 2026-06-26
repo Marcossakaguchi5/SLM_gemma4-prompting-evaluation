@@ -76,11 +76,9 @@ Os resultados brutos são gerados em `resultados/`, pasta ignorada pelo Git por 
 As figuras usadas no artigo foram versionadas em `figuras/`:
 
 - `figuras/fluxo_experimental_ilustrado.png`
-- `figuras/nemotron_amostra_separada.png`
-- `figuras/acuracia_final_por_abordagem.png`
+- `figuras/delta_vs_base_gemma_limpo.png`
 - `figuras/acuracia_final_por_dataset_abordagem.png`
-- `figuras/oracle_at_3_final.png`
-- `figuras/custo_vs_acuracia_final.png`
+- `figuras/oracle_gap_gflow.png`
 
 O texto principal está em `artigo_sbc_reformatado_v3_expandido_avaliacoes_academico.tex`.
 
