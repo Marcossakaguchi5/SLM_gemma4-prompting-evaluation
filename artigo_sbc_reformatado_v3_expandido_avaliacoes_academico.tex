@@ -14,6 +14,8 @@
 
 \sloppy
 
+\newcommand{\oracle}{\mbox{\textit{Oracle@3}}}
+
 \title{Chain-of-Thought, Flow of Reasoning e Multi-Trajetória no Gemma 4: um Estudo Experimental de Estratégias de Prompting em SLM Local via LLM-Juiz}
 
 \author{Marcos Hideki Nishida Sakaguchi\inst{1}}
@@ -29,11 +31,11 @@ Faculdade de Ciências -- Bauru, SP -- Brasil\\
 \maketitle
 
 \begin{abstract}
-This paper presents an experimental study comparing prompting strategies in a local Small Language Model executed through Ollama. The study evaluates direct answering, Chain-of-Thought, Flow of Reasoning, and a three-trajectory strategy inspired by GFlowNets over GSM8K, ARC-Challenge, Hendrycks MATH/AIME, and TruthfulQA. Answers are standardized with \texttt{RESPOSTA\_FINAL}, stored in auditable JSON/JSONL files, and assessed through deterministic matching, symbolic equivalence, and an external reference-based LLM-as-a-Judge. In the final round, direct answering reached the highest aggregate accuracy among Gemma 4 conditions (85.4\%), while the structured strategies ranged from 82.5\% to 83.3\%. The results do not support an aggregate gain from structured reasoning under the tested configuration, although Oracle@3 indicates unused potential in the multi-trajectory selection step. Nemotron Diffusion is reported separately as an external-model baseline over the same frozen questions.
+This paper presents an experimental study comparing prompting strategies in a local Small Language Model executed through Ollama. The study evaluates direct answering, Chain-of-Thought, Flow of Reasoning, and a three-trajectory strategy inspired by GFlowNets over GSM8K, ARC-Challenge, Hendrycks MATH/AIME, and TruthfulQA. Answers are standardized with \texttt{RESPOSTA\_FINAL}, stored in auditable JSON/JSONL files, and assessed through deterministic matching, symbolic equivalence, and an external reference-based LLM-as-a-Judge. In the final round, direct answering reached the highest aggregate accuracy among Gemma 4 conditions (85.4\%), while the structured strategies ranged from 82.5\% to 83.3\%. The results do not support an aggregate gain from structured reasoning under the tested configuration, although \oracle{} indicates unused potential in the multi-trajectory selection step. Nemotron Diffusion is reported separately as an external-model baseline over the same frozen questions.
 \end{abstract}
 
 \begin{resumo}
-Este trabalho apresenta um estudo experimental para comparar estratégias de prompting em um Small Language Model local executado via Ollama. O estudo avalia resposta direta, Chain-of-Thought, Flow of Reasoning e uma estratégia multi-trajetória inspirada em GFlowNets nos datasets GSM8K, ARC-Challenge, Hendrycks MATH/AIME e TruthfulQA. As respostas são padronizadas com \texttt{RESPOSTA\_FINAL}, armazenadas em JSON/JSONL auditável e avaliadas por comparação determinística, equivalência simbólica e LLM-juiz externo baseado em referência. Na rodada final, a resposta direta obteve a maior acurácia agregada entre as condições do Gemma 4 (85,4\%), enquanto as estratégias estruturadas variaram entre 82,5\% e 83,3\%. Os resultados não sustentam ganho agregado do raciocínio estruturado sob a configuração testada, embora o Oracle@3 indique potencial não aproveitado na etapa de seleção multi-trajetória. O Nemotron Diffusion é reportado separadamente como baseline externo de modelo sobre as mesmas perguntas congeladas.
+Este trabalho apresenta um estudo experimental para comparar estratégias de prompting em um Small Language Model local executado via Ollama. O estudo avalia resposta direta, Chain-of-Thought, Flow of Reasoning e uma estratégia multi-trajetória inspirada em GFlowNets nos datasets GSM8K, ARC-Challenge, Hendrycks MATH/AIME e TruthfulQA. As respostas são padronizadas com \texttt{RESPOSTA\_FINAL}, armazenadas em JSON/JSONL auditável e avaliadas por comparação determinística, equivalência simbólica e LLM-juiz externo baseado em referência. Na rodada final, a resposta direta obteve a maior acurácia agregada entre as condições do Gemma 4 (85,4\%), enquanto as estratégias estruturadas variaram entre 82,5\% e 83,3\%. Os resultados não sustentam ganho agregado do raciocínio estruturado sob a configuração testada, embora o \oracle{} indique potencial não aproveitado na etapa de seleção multi-trajetória. O Nemotron Diffusion é reportado separadamente como baseline externo de modelo sobre as mesmas perguntas congeladas.
 \end{resumo}
 
 \section{Introdução}
@@ -57,7 +59,7 @@ As perguntas de pesquisa que orientam o trabalho são:
 \item \textbf{QP4}: a padronização da resposta final e a avaliação por LLM-juiz tornam o processo mais auditável e menos dependente de inspeção manual?
 \end{itemize}
 
-As contribuições do trabalho podem ser resumidas em cinco pontos. Primeiro, apresenta-se um protocolo experimental reprodutível para comparar estratégias de inferência em SLMs locais. Segundo, formaliza-se uma adaptação multi-trajetória com seleção por consenso sem gabarito e cálculo separado de \textit{Oracle@3}. Terceiro, implementa-se um LLM-as-a-Judge externo com auditoria por ordem reversa e suporte a um segundo juiz. Quarto, combinam-se métricas determinísticas, equivalência simbólica, Truthfulness e Informativeness. Quinto, organizam-se scripts para geração, avaliação humana cega, consolidação estatística com bootstrap e visualização gráfica.
+As contribuições do trabalho podem ser resumidas em cinco pontos. Primeiro, apresenta-se um protocolo experimental reprodutível para comparar estratégias de inferência em SLMs locais. Segundo, formaliza-se uma adaptação multi-trajetória com seleção por consenso sem gabarito e cálculo separado de \oracle{}. Terceiro, implementa-se um LLM-as-a-Judge externo com auditoria por ordem reversa e suporte a um segundo juiz. Quarto, combinam-se métricas determinísticas, equivalência simbólica, Truthfulness e Informativeness. Quinto, organizam-se scripts para geração, avaliação humana cega, consolidação estatística com bootstrap e visualização gráfica.
 
 O fluxo experimental selecionou 100 instâncias por dataset, executou o modelo sob cada estratégia, padronizou a saída no marcador \texttt{RESPOSTA\_FINAL}, persistiu arquivos JSON/JSONL, combinou avaliação determinística e LLM como juiz, consolidou métricas e gerou gráficos. A rodada final, identificada como \texttt{rodada\_20260624\_040601}, foi concluída com 400 perguntas congeladas, 2000 respostas oficiais quando se soma Gemma e Nemotron, 2000 avaliações determinísticas e 660 avaliações por LLM-juiz. Este artigo descreve os fundamentos conceituais, a metodologia, o desenvolvimento do pipeline e os resultados quantitativos consolidados dessa rodada.
 
@@ -96,7 +98,7 @@ Outra linha relacionada investiga a geração de múltiplos caminhos de raciocí
 
 Tree of Thoughts \cite{yao2023tot} generaliza o CoT linear ao permitir exploração, avaliação e retrocesso sobre diferentes unidades intermediárias de pensamento. Redes de Fluxo Generativas, ou GFlowNets, foram originalmente propostas para amostrar objetos compostos com probabilidade proporcional a uma recompensa \cite{bengio2021}. Este artigo não implementa uma GFlowNet treinada; usa apenas a intuição de diversidade de trajetórias como inspiração de engenharia de inferência.
 
-Na implementação avaliada, \texttt{gflow} gera três trajetórias independentes com papéis distintos: formal, heurística e contraprova/por casos. As respostas finais normalizadas são combinadas por voto majoritário e prioridade fixa em caso de empate. Além da resposta oficial, as três trajetórias são preservadas para o cálculo de \textit{Oracle@3}, que mede se alguma trajetória continha uma resposta correta mesmo quando o consenso final falhou. Dessa forma, o experimento diferencia duas questões: capacidade de gerar uma resposta correta em alguma trajetória e capacidade de selecionar corretamente a resposta final.
+Na implementação avaliada, \texttt{gflow} gera três trajetórias independentes com papéis distintos: formal, heurística e contraprova/por casos. As respostas finais normalizadas são combinadas por voto majoritário e prioridade fixa em caso de empate. Além da resposta oficial, as três trajetórias são preservadas para o cálculo de \oracle{}, que mede se alguma trajetória continha uma resposta correta mesmo quando o consenso final falhou. Dessa forma, o experimento diferencia duas questões: capacidade de gerar uma resposta correta em alguma trajetória e capacidade de selecionar corretamente a resposta final.
 
 \subsection{Avaliação Automatizada e LLM-as-a-Judge}
 
@@ -110,7 +112,7 @@ No experimento final, o juiz primário foi \texttt{deepseek/deepseek-v4-flash}, 
 
 Os trabalhos revisados mostram que CoT, decomposição, planejamento e múltiplas trajetórias podem melhorar desempenho em diferentes contextos, especialmente em LLMs maiores ou em tarefas específicas. Também mostram que SLMs devem ser avaliados de forma própria, considerando eficiência e restrições de execução local. Ainda assim, permanece uma lacuna prática: para um mesmo SLM local, executado sob o mesmo hardware e avaliado nos mesmos datasets, não é óbvio que estratégias estruturadas compensem a resposta direta.
 
-Este artigo ocupa essa lacuna ao comparar quatro estratégias de prompting no mesmo modelo local, com datasets congelados, avaliação determinística quando possível, LLM-juiz externo quando necessário, auditoria posicional, métricas de custo e análise de \textit{Oracle@3}. O objetivo, portanto, não é propor um novo benchmark multi-modelo, mas produzir uma comparação controlada de estratégias de inferência aplicáveis a SLMs locais.
+Este artigo ocupa essa lacuna ao comparar quatro estratégias de prompting no mesmo modelo local, com datasets congelados, avaliação determinística quando possível, LLM-juiz externo quando necessário, auditoria posicional, métricas de custo e análise de \oracle{}. O objetivo, portanto, não é propor um novo benchmark multi-modelo, mas produzir uma comparação controlada de estratégias de inferência aplicáveis a SLMs locais.
 
 \section{Metodologia}
 
@@ -173,7 +175,7 @@ A estratégia \texttt{cot} solicita raciocínio passo a passo. O modelo pode exp
 
 A estratégia \texttt{for} aplica Flow of Reasoning. A resposta passa por quatro fases: decomposição, mapeamento de conhecimento, execução e auditoria. Essa estrutura testa se um fluxo fixo reduz erros em relação ao CoT livre.
 
-A estratégia \texttt{gflow} usa três trajetórias. Cada trajetória gera uma solução candidata com um papel específico: formal, heurístico ou contraprova/por casos. A resposta oficial é escolhida sem gabarito por maioria das respostas normalizadas; empates são resolvidos por prioridade determinística. O LLM-juiz externo avalia somente essa resposta oficial. A métrica \textit{Oracle@3} mede separadamente se ao menos uma das três trajetórias estava correta.
+A estratégia \texttt{gflow} usa três trajetórias. Cada trajetória gera uma solução candidata com um papel específico: formal, heurístico ou contraprova/por casos. A resposta oficial é escolhida sem gabarito por maioria das respostas normalizadas; empates são resolvidos por prioridade determinística. O LLM-juiz externo avalia somente essa resposta oficial. A métrica \oracle{} mede separadamente se ao menos uma das três trajetórias estava correta.
 
 \begin{table}[ht]
 \centering
@@ -202,7 +204,7 @@ Essa taxonomia mostra que as estratégias não competem apenas em acurácia. Ela
 
 As quatro estrat\'egias diferem apenas na forma de organizar a infer\^encia. A condi\c{c}\~ao \texttt{base} pede uma resposta direta. A condi\c{c}\~ao \texttt{cot} induz uma cadeia curta de racioc\'inio antes da resposta. A condi\c{c}\~ao \texttt{for} estrutura a solu\c{c}\~ao em decomposi\c{c}\~ao, mapeamento de conhecimento, execu\c{c}\~ao e auditoria. A condi\c{c}\~ao \texttt{gflow} executa tr\^es trajet\'orias independentes, orientadas por pap\'eis complementares, e seleciona a resposta oficial por consenso determin\'istico, sem consultar o gabarito.
 
-Na estrat\'egia \texttt{gflow}, os pap\'eis das trajet\'orias s\~ao adaptados ao dom\'inio. Em tarefas matem\'aticas e de m\'ultipla escolha, usam-se trajet\'orias formal, heur\'istica e de contraprova ou casos. Em TruthfulQA, os pap\'eis s\~ao factual, c\'etico e incerteza calibrada. As tr\^es candidatas s\~ao preservadas nos artefatos da rodada, mas apenas a resposta selecionada \textit{sem gabarito} \~e usada na acur\'acia oficial. A m\'etrica \textit{Oracle@3} \~e reportada separadamente como teto diagn\'ostico, indicando se alguma trajet\'oria continha uma resposta correta mesmo quando o consenso falhou.
+Na estrat\'egia \texttt{gflow}, os pap\'eis das trajet\'orias s\~ao adaptados ao dom\'inio. Em tarefas matem\'aticas e de m\'ultipla escolha, usam-se trajet\'orias formal, heur\'istica e de contraprova ou casos. Em TruthfulQA, os pap\'eis s\~ao factual, c\'etico e incerteza calibrada. As tr\^es candidatas s\~ao preservadas nos artefatos da rodada, mas apenas a resposta selecionada \textit{sem gabarito} \'{e} usada na acur\'acia oficial. A m\'etrica \oracle{} \'{e} reportada separadamente como teto diagn\'ostico, indicando se alguma trajet\'oria continha uma resposta correta mesmo quando o consenso falhou.
 
 \subsection{Padronização da Resposta Final}
 
@@ -234,48 +236,14 @@ Os prompts foram centralizados no reposit\'orio e versionados por \texttt{PROMPT
 \hline
 \texttt{for} & Resolver em fases de decomposi\c{c}\~ao, conhecimento, execu\c{c}\~ao e auditoria. & Uma chamada ao SLM; testa uma estrutura fixa de racioc\'inio. \\
 \hline
-\texttt{gflow} & Gerar tr\^es trajet\'orias independentes e selecionar por consenso. & Tr\^es chamadas ao SLM; Oracle@3 \~e calculado apenas como diagn\'ostico. \\
+\texttt{gflow} & Gerar tr\^es trajet\'orias independentes e selecionar por consenso. & Tr\^es chamadas ao SLM; \oracle{} \'{e} calculado apenas como diagn\'ostico. \\
 \hline
 \end{tabular}
 \end{table}
 
 \subsection{Fluxo Experimental}
 
-O fluxo completo do experimento pode ser resumido como uma sequência de transformação de dados, desde a seleção das perguntas até a geração de tabelas e gráficos. A estrutura geral é apresentada no diagrama textual abaixo:
-
-\begin{verbatim}
-Datasets
-  |-- GSM8K
-  |-- ARC-Challenge
-  |-- Hendrycks MATH/AIME
-  |-- TruthfulQA
-        |
-        v
-Selecao aleatoria reproduzivel de 100 perguntas por dataset
-        |
-        v
-Estrategias de inferencia
-  |-- base
-  |-- cot
-  |-- for
-  |-- gflow (3 trajetorias + consenso sem gabarito)
-        |
-        v
-SLM local via Ollama
-        |
-        v
-Resposta padronizada com RESPOSTA_FINAL
-        |
-        v
-Metricas objetivas + LLM-as-a-Judge externo
-  |-- ordem embaralhada
-  |-- ordem reversa
-  |-- segundo juiz em amostra
-  |-- avaliacao humana cega
-        |
-        v
-Metricas, tabelas e graficos
-\end{verbatim}
+O fluxo completo do experimento transforma uma amostra congelada de perguntas em respostas padronizadas, vereditos auditáveis, métricas consolidadas e figuras finais. A Figura~\ref{fig:fluxo-ilustrado} resume esse percurso: os datasets alimentam as estratégias de inferência, as respostas são normalizadas com \texttt{RESPOSTA\_FINAL}, a avaliação combina critérios objetivos e LLM-as-a-Judge externo, e os artefatos finais são preservados para auditoria e reprodução.
 
 \begin{figure}[ht]
 \centering
@@ -331,9 +299,9 @@ Para garantir que a compara\c{c}\~ao entre modelos use exatamente as mesmas inst
 
 A avaliação combina três camadas. A primeira é a extração da resposta final. A segunda usa métricas determinísticas: alternativa exata no ARC, comparação numérica no GSM8K e equivalência simbólica via SymPy no MATH/AIME. A terceira é o LLM-as-a-Judge externo, usado para equivalência semântica, TruthfulQA e casos não resolvidos de forma objetiva.
 
-O juiz recebe um payload comparativo por pergunta, inicialmente em ordem embaralhada por seed e depois em ordem inversa. O juiz primário configurado para a rodada integral é \texttt{deepseek/deepseek-v4-flash}. Para o Gemma, o conteúdo inclui pergunta, referência, listas corretas/incorretas do TruthfulQA e as respostas das quatro estratégias. Nos datasets objetivos, esse payload só é encaminhado ao juiz quando a extração ou a equivalência determinística não produz veredito conclusivo; em TruthfulQA, o juiz permanece como avaliador principal. O baseline Nemotron é julgado com a mesma referência, porém em grupo de modelo separado; assim, o ranking de prompting não confunde efeito de prompt com diferença de arquitetura. Para \texttt{gflow}, o juiz avalia oficialmente apenas a resposta selecionada; os rastros alimentam exclusivamente \textit{Oracle@3}. Uma amostra configurável, por padrão 10\%, pode ser enviada a um segundo juiz externo.
+O juiz recebe um payload comparativo por pergunta, inicialmente em ordem embaralhada por seed e depois em ordem inversa. O juiz primário configurado para a rodada integral é \texttt{deepseek/deepseek-v4-flash}. Para o Gemma, o conteúdo inclui pergunta, referência, listas corretas/incorretas do TruthfulQA e as respostas das quatro estratégias. Nos datasets objetivos, esse payload só é encaminhado ao juiz quando a extração ou a equivalência determinística não produz veredito conclusivo; em TruthfulQA, o juiz permanece como avaliador principal. O baseline Nemotron é julgado com a mesma referência, porém em grupo de modelo separado; assim, o ranking de prompting não confunde efeito de prompt com diferença de arquitetura. Para \texttt{gflow}, o juiz avalia oficialmente apenas a resposta selecionada; os rastros alimentam exclusivamente \oracle{}. Uma amostra configurável, por padrão 10\%, pode ser enviada a um segundo juiz externo.
 
-O juiz retorna um JSON estruturado com veredito bin\'ario, pontua\c{c}\~ao, resposta extra\'ida, refer\^encia curta, justificativa, confian\c{c}a e, quando aplic\'avel, categorias de erro, m\'etricas espec\'ificas de TruthfulQA e diagn\'ostico \textit{Oracle@3}. Esses campos s\~ao mantidos nos artefatos de auditoria, enquanto o artigo reporta apenas as m\'etricas agregadas necess\'arias para a an\'alise quantitativa.
+O juiz retorna um JSON estruturado com veredito bin\'ario, pontua\c{c}\~ao, resposta extra\'ida, refer\^encia curta, justificativa, confian\c{c}a e, quando aplic\'avel, categorias de erro, m\'etricas espec\'ificas de TruthfulQA e diagn\'ostico \oracle{}. Esses campos s\~ao mantidos nos artefatos de auditoria, enquanto o artigo reporta apenas as m\'etricas agregadas necess\'arias para a an\'alise quantitativa.
 
 A acurácia é calculada separadamente para cada estratégia \(s\) e dataset \(D\), considerando apenas o conjunto \(V_{s,D}\) de instâncias com veredito válido. Uma instância é incluída em \(V_{s,D}\) quando a comparação determinística, a equivalência simbólica ou o LLM-juiz produz uma decisão binária conclusiva. Casos sem veredito válido são preservados nos artefatos de auditoria, mas não são automaticamente convertidos em erro do modelo, pois representam falha ou inconclusão do procedimento de avaliação, não necessariamente da resposta gerada.
 
@@ -357,7 +325,7 @@ Dessa forma, valores positivos de \(\Delta(s,D)\) indicam melhora em relação �
 
 \textit{Exact Match} exige igualdade após normalização textual. \textit{Answer Match} aceita equivalência adequada ao domínio: letra correta em múltipla escolha, igualdade numérica em GSM8K, equivalência simbólica em MATH/AIME e equivalência semântica julgada externamente em TruthfulQA. A \textit{Symbolic Equivalence} simplifica a diferença entre expressões com SymPy e considera equivalentes aquelas cujo resultado é zero.
 
-Em TruthfulQA, \textit{Truthfulness} mede se a resposta evita afirmações falsas, enquanto \textit{Informativeness} verifica se ela fornece conteúdo útil em vez de apenas recusar ou responder de forma vaga. Para \texttt{gflow}, \textit{Oracle@3} representa a proporção de instâncias em que pelo menos uma trajetória estava correta, funcionando como limite superior da exploração multi-trajetória.
+Em TruthfulQA, \textit{Truthfulness} mede se a resposta evita afirmações falsas, enquanto \textit{Informativeness} verifica se ela fornece conteúdo útil em vez de apenas recusar ou responder de forma vaga. Para \texttt{gflow}, \oracle{} representa a proporção de instâncias em que pelo menos uma trajetória estava correta, funcionando como limite superior da exploração multi-trajetória.
 
 A incerteza da acurácia e do delta pareado é estimada por intervalo de confiança de 95\% via bootstrap com 5000 reamostragens. Agreement e Cohen's Kappa são calculados entre juiz primário e ordem reversa e, quando disponíveis, entre juiz primário e segundo juiz e entre juiz e avaliação humana. A taxa de divergência entre ordem original e inversa define o \textit{Position Bias Rate}.
 
@@ -380,7 +348,7 @@ O LLM-juiz opera em duas passagens, ordem original e inversa. Quando todas as in
 
 Na continuação sem TruthfulQA, quando executada, a geração mantém o custo local das quatro estratégias sobre GSM8K, ARC-Challenge e Hendrycks MATH/AIME, mas a avaliação externa tende a ser substancialmente menor: apenas respostas objetivas que falham na extração, normalização ou equivalência simbólica são encaminhadas ao juiz. Essa separação torna a ampliação da amostra mais barata e metodologicamente mais robusta, pois a maior parte dos vereditos passa a depender de comparação determinística auditável.
 
-Os gráficos incluem Answer Match, Exact Match, equivalência simbólica, Truthfulness, Informativeness, Oracle@3, Win/Tie/Loss, Position Bias Rate, Accuracy per Second, Gain per Extra Call e custo temporal versus acurácia.
+Os gráficos incluem Answer Match, Exact Match, equivalência simbólica, Truthfulness, Informativeness, \oracle{}, Win/Tie/Loss, Position Bias Rate, Accuracy per Second, Gain per Extra Call e custo temporal versus acurácia.
 
 
 \subsection{Implementa\c{c}\~ao e Artefatos Reprodut\'iveis}
@@ -402,7 +370,7 @@ Baseline externo & Executar o Nemotron apenas na condi\c{c}\~ao \texttt{base}, s
 \hline
 Avalia\c{c}\~ao & Aplicar matching determin\'istico, equival\^encia simb\'olica e LLM-as-a-Judge quando necess\'ario. & Vereditos, auditoria de ordem reversa, resumos CSV e registros comparativos. \\
 \hline
-Consolida\c{c}\~ao e gr\'aficos & Calcular m\'etricas, testes pareados, bootstrap e figuras finais. & Tabelas anal\'iticas, intervalos de confian\c{c}a, Win/Tie/Loss, Oracle@3 e gr\'aficos. \\
+Consolida\c{c}\~ao e gr\'aficos & Calcular m\'etricas, testes pareados, bootstrap e figuras finais. & Tabelas anal\'iticas, intervalos de confian\c{c}a, Win/Tie/Loss, \oracle{} e gr\'aficos. \\
 \hline
 \end{tabular}
 \end{table}
@@ -483,20 +451,20 @@ Os testes Win/Tie/Loss reforçam essa leitura. Em ARC-Challenge, as comparaçõe
 \label{fig:acuracia-final-dataset}
 \end{figure}
 
-\subsection{Multi-trajetória e Oracle@3}
+\subsection{Multi-trajetória e \oracle{}}
 
-A estratégia \texttt{gflow} foi a mais cara entre as abordagens do Gemma, pois executou três chamadas ao SLM por pergunta. Sua acurácia oficial, contudo, foi inferior à linha de base agregada. O diagnóstico Oracle@3 mostra que ao menos uma das três trajetórias frequentemente continha uma resposta correta, mas o consenso determinístico nem sempre selecionou essa alternativa. Portanto, o problema observado não está apenas na geração de diversidade, mas também no mecanismo de seleção.
+A estratégia \texttt{gflow} apresentou o maior custo computacional relativo entre as abordagens do Gemma, pois exige três chamadas ao SLM por instância. Sua acurácia oficial, contudo, foi inferior à linha de base agregada. O diagnóstico \oracle{} mostra que ao menos uma das três trajetórias frequentemente continha uma resposta correta, mas o consenso determinístico nem sempre selecionou essa alternativa. Portanto, os resultados sugerem que a limitação principal está no mecanismo de seleção das trajetórias, e não apenas na capacidade de gerar candidatos diversos.
 
 \begin{table}[ht]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.15}
-\caption{Acurácia oficial de \texttt{gflow} e teto diagnóstico Oracle@3.}
+\caption{Acurácia oficial de \texttt{gflow} e teto diagnóstico \oracle{}.}
 \label{tab:oracle-final}
 \begin{tabular}{|p{3.6cm}|c|c|c|}
 \hline
-\textbf{Dataset} & \textbf{Acurácia oficial} & \textbf{Oracle@3} & \textbf{Diferença} \\
+\textbf{Dataset} & \textbf{Acurácia oficial} & \textbf{\oracle{}} & \textbf{Diferença} \\
 \hline
 ARC-Challenge & 95,0\% & 99,0\% & +4,0 p.p. \\
 GSM8K & 92,0\% & 93,0\% & +1,0 p.p. \\
@@ -507,13 +475,13 @@ Agregado & 82,5\% & 86,0\% & +3,5 p.p. \\
 \end{tabular}
 \end{table}
 
-Essa diferença é metodologicamente relevante. Se \texttt{gflow} fosse avaliado pelo melhor dos três caminhos, seu desempenho se aproximaria ou superaria a base agregada. Porém, esse cenário seria oracular, pois exigiria saber qual trajetória está correta. Na condição operacional real, a seleção por consenso não justifica o custo de três chamadas por pergunta.
+Essa diferença é metodologicamente relevante. Se \texttt{gflow} fosse avaliado pelo melhor dos três caminhos, seu desempenho se aproximaria ou superaria a base agregada. Porém, esse cenário seria oracular, pois exigiria saber qual trajetória está correta. Na condição operacional real, a seleção por consenso não apresentou evidência empírica suficiente para compensar o aumento de custo sob a configuração avaliada.
 
 
 \begin{figure}[ht]
 \centering
 \includegraphics[width=0.82\textwidth]{figuras/oracle_gap_gflow.png}
-\caption{Gap entre Oracle@3 e a acur\'acia oficial da estrat\'egia \texttt{gflow}. O gr\'afico evidencia o potencial perdido na etapa de sele\c{c}\~ao das trajet\'orias.}
+\caption{Gap entre \oracle{} e a acur\'acia oficial da estrat\'egia \texttt{gflow}. O gr\'afico evidencia o potencial perdido na etapa de sele\c{c}\~ao das trajet\'orias.}
 \label{fig:oracle-final}
 \end{figure}
 
@@ -593,7 +561,7 @@ Uma ameaça adicional à comparação entre modelos é a assimetria de infraestr
 
 Este trabalho consolidou e executou um protocolo reprodutível para comparar estratégias de prompting no Gemma 4 e acrescentou um baseline externo com Nemotron Diffusion sobre a mesma amostra congelada. A separação entre perguntas e referências, a persistência dos manifestos, o matching determinístico, a equivalência simbólica e a auditoria do LLM-juiz tornam o fluxo rastreável e permitem repetir geração, avaliação ou análise sem misturar rodadas.
 
-Em relação à QP1, os resultados desta rodada não sustentam ganho agregado das estratégias estruturadas sobre a resposta direta. A linha de base obteve a maior acurácia global entre as condições do Gemma, enquanto CoT apresentou apenas um ganho local em GSM8K. Assim, a evidência sugere que estratégias de raciocínio podem ter efeito dependente do domínio, mas não produziram melhoria geral sob a configuração testada. Em relação à QP2, a estratégia multi-trajetória não justificou o aumento de chamadas na forma atual: o Oracle@3 mostra potencial latente, mas o consenso oficial não selecionou esse potencial de modo confiável. Em relação à QP3, o efeito varia por dataset: CoT teve pequeno ganho em GSM8K, FoR empatou com a base em TruthfulQA, e as estratégias estruturadas perderam em Hendrycks MATH/AIME. Em relação à QP4, a padronização da resposta final e a combinação de avaliação determinística com LLM-juiz tornaram a análise auditável, embora a ausência de avaliação humana ainda limite a força das conclusões semânticas.
+Em relação à QP1, os resultados desta rodada não sustentam ganho agregado das estratégias estruturadas sobre a resposta direta. A linha de base obteve a maior acurácia global entre as condições do Gemma, enquanto CoT apresentou apenas um ganho local em GSM8K. Assim, a evidência sugere que estratégias de raciocínio podem ter efeito dependente do domínio, mas não produziram melhoria geral sob a configuração testada. Em relação à QP2, a estratégia multi-trajetória não apresentou evidência empírica suficiente para compensar o aumento de chamadas na forma atual: o \oracle{} mostra potencial latente, mas o consenso oficial não selecionou esse potencial de modo confiável. Em relação à QP3, o efeito varia por dataset: CoT teve pequeno ganho em GSM8K, FoR empatou com a base em TruthfulQA, e as estratégias estruturadas perderam em Hendrycks MATH/AIME. Em relação à QP4, a padronização da resposta final e a combinação de avaliação determinística com LLM-juiz tornaram a análise auditável, embora a ausência de avaliação humana ainda limite a força das conclusões semânticas.
 
 Como resultado prático, a configuração mais defensável para o Gemma 4 nesta rodada é usar \texttt{base} como padrão geral e reservar CoT para tarefas aritméticas quando o custo de uma resposta mais longa for aceitável. FoR e \texttt{gflow} permanecem promissores como estruturas de pesquisa, mas precisam de seleção mais forte, acionamento seletivo por domínio ou julgamento interno calibrado antes de serem adotados como estratégia padrão. O Nemotron Diffusion, nesta configuração, ficou substancialmente abaixo do Gemma em correção e deve ser tratado apenas como baseline externo exploratório.
 
